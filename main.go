@@ -31,7 +31,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	static, err := fs.Sub(webFS, "web")
+	static, source, err := loadStatic()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,9 +39,23 @@ func main() {
 	srv := &server.Server{Store: st, Static: static}
 	log.Printf("bookmarker listening on http://%s", *addr)
 	log.Printf("data directory: %s", absData)
+	log.Printf("UI assets: %s", source)
 	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Prefer ./web on disk when present so UI edits show without a rebuild.
+// Fall back to the embedded copy for a lone bookmarker.exe.
+func loadStatic() (fs.FS, string, error) {
+	if info, err := os.Stat("web"); err == nil && info.IsDir() {
+		return os.DirFS("web"), "web/ (disk)", nil
+	}
+	sub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		return nil, "", err
+	}
+	return sub, "embedded", nil
 }
 
 func envOr(key, fallback string) string {

@@ -34,6 +34,8 @@ go build -o bookmarker.exe .
 
 Open http://127.0.0.1:8787/
 
+If the page still shows the old multi-line layout with always-visible Delete, a stale `bookmarker.exe` is almost certainly still bound to port 8787. Run `restart.cmd` in this folder (or kill that process), then hard-refresh with Ctrl+F5. When `web/` exists next to the process working directory, the server serves those files from disk so UI tweaks do not require a rebuild.
+
 ## Chrome bookmarklet
 
 Create a bookmark whose URL is (adjust host/port if you changed `-addr`):

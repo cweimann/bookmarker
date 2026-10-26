@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bookmarker</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header class="brand">
+        <h1>Bookmarker</h1>
+      </header>
+      <nav class="nav" id="nav">
+        <button type="button" class="nav-item active" data-slug="inbox" draggable="false">
+          Inbox
+        </button>
+        <div id="category-list"></div>
+      </nav>
+      <form id="new-category" class="new-category">
+        <label for="category-title">New category</label>
+        <div class="row">
+          <input id="category-title" name="title" type="text" placeholder="Name" required autocomplete="off">
+          <button type="submit">Add</button>
+        </div>
+      </form>
+    </aside>
+    <main class="main">
+      <header class="main-header">
+        <h2 id="list-title">Inbox</h2>
+        <p class="hint">Drag a bookmark onto a category in the sidebar to move it.</p>
+      </header>
+      <ul id="bookmark-list" class="bookmarks"></ul>
+      <p id="empty" class="empty hidden">No bookmarks here yet.</p>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

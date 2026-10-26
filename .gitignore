@@ -1,0 +1,5 @@
+/bookmarker
+/bookmarker.exe
+*.exe
+data/
+.tmp-*

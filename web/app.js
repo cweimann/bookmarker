@@ -5,9 +5,11 @@
   const empty = document.getElementById("empty");
   const newCategoryForm = document.getElementById("new-category");
   const inboxBtn = document.querySelector('[data-slug="inbox"]');
+  const editToggle = document.getElementById("edit-toggle");
 
   let current = "inbox";
   let categories = [];
+  let editMode = false;
 
   async function api(path, opts) {
     const res = await fetch(path, {
@@ -19,6 +21,21 @@
       throw new Error(data.error || res.statusText);
     }
     return data;
+  }
+
+  function hostOf(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return "";
+    }
+  }
+
+  function setEditMode(on) {
+    editMode = !!on;
+    document.body.classList.toggle("edit-mode", editMode);
+    editToggle.setAttribute("aria-pressed", editMode ? "true" : "false");
+    editToggle.textContent = editMode ? "Done" : "Edit";
   }
 
   function setActive(slug) {
@@ -86,21 +103,26 @@
       li.dataset.id = b.id;
 
       const link = document.createElement("a");
+      link.className = "title";
       link.href = b.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = b.title || b.url;
+      link.draggable = false;
 
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      meta.textContent = [b.source, b.saved].filter(Boolean).join(" · ");
+      const host = document.createElement("span");
+      host.className = "host";
+      host.textContent = hostOf(b.url);
 
-      const actions = document.createElement("div");
-      actions.className = "actions";
       const del = document.createElement("button");
       del.type = "button";
-      del.textContent = "Delete";
-      del.addEventListener("click", async () => {
+      del.className = "delete-x";
+      del.setAttribute("aria-label", "Delete bookmark");
+      del.textContent = "×";
+      del.addEventListener("mousedown", (e) => e.stopPropagation());
+      del.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (!confirm("Delete this bookmark?")) return;
         try {
           await api("/api/bookmarks/delete", {
@@ -112,13 +134,16 @@
           alert(err.message);
         }
       });
-      actions.appendChild(del);
 
       li.appendChild(link);
-      li.appendChild(meta);
-      li.appendChild(actions);
+      li.appendChild(host);
+      li.appendChild(del);
 
       li.addEventListener("dragstart", (e) => {
+        if (e.target.closest && e.target.closest(".delete-x")) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.setData("text/bookmark-id", b.id);
         e.dataTransfer.setData("text/bookmark-from", current);
         e.dataTransfer.effectAllowed = "move";
@@ -138,6 +163,8 @@
     const items = await api("/api/bookmarks?category=" + q);
     renderBookmarks(items);
   }
+
+  editToggle.addEventListener("click", () => setEditMode(!editMode));
 
   inboxBtn.addEventListener("click", () => {
     setActive("inbox");

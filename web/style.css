@@ -7,7 +7,6 @@
   --accent: #0f766e;
   --accent-soft: #ccfbf1;
   --danger: #b91c1c;
-  --shadow: 0 1px 0 rgba(28, 25, 23, 0.04);
   --font: "Segoe UI", "Candara", "Gill Sans", sans-serif;
 }
 
@@ -104,8 +103,7 @@ body {
   background: #fff;
 }
 
-.new-category button,
-.bookmark button {
+.new-category button {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 0.35rem;
@@ -114,8 +112,7 @@ body {
   cursor: pointer;
 }
 
-.new-category button:hover,
-.bookmark button:hover {
+.new-category button:hover {
   border-color: #cbd5e1;
   background: #f8fafc;
 }
@@ -124,14 +121,46 @@ body {
   padding: 1.5rem 2rem 2rem;
 }
 
+.main-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 44rem;
+}
+
 .main-header h2 {
-  margin: 0 0 0.25rem;
+  margin: 0;
   font-size: 1.5rem;
   letter-spacing: -0.02em;
 }
 
+.edit-toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.edit-toggle:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.edit-toggle[aria-pressed="true"] {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .hint {
-  margin: 0 0 1.25rem;
+  margin: 0.35rem 0 1rem;
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -142,51 +171,85 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
   max-width: 44rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: var(--panel);
+  overflow: hidden;
 }
 
 .bookmark {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 0.55rem;
-  padding: 0.85rem 1rem;
-  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--line);
   cursor: grab;
-  display: grid;
-  gap: 0.25rem;
+  min-height: 2.1rem;
+}
+
+.bookmark:last-child {
+  border-bottom: none;
+}
+
+.bookmark:hover {
+  background: #faf7f1;
 }
 
 .bookmark:active {
   cursor: grabbing;
 }
 
-.bookmark a {
+.bookmark .title {
+  flex: 1;
+  min-width: 0;
   color: var(--accent);
   font-weight: 600;
   text-decoration: none;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.bookmark a:hover {
+.bookmark .title:hover {
   text-decoration: underline;
 }
 
-.meta {
+.bookmark .host {
+  flex-shrink: 0;
   color: var(--muted);
   font-size: 0.8rem;
+  max-width: 12rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.bookmark .actions {
-  margin-top: 0.35rem;
-}
-
-.bookmark .actions button {
+.bookmark .delete-x {
+  display: none;
+  flex-shrink: 0;
+  appearance: none;
+  border: none;
+  background: transparent;
   color: var(--danger);
-  border-color: #fecaca;
-  background: #fff;
-  padding: 0.25rem 0.55rem;
-  font-size: 0.8rem;
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+
+.bookmark .delete-x:hover {
+  background: #fee2e2;
+}
+
+body.edit-mode .bookmark .delete-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty {
@@ -209,5 +272,9 @@ body {
 
   .main {
     padding: 1.25rem;
+  }
+
+  .bookmark .host {
+    display: none;
   }
 }

@@ -101,6 +101,6 @@ python scripts\import_showlinks.py --refetch
 ## Later
 
 - Push this repo to GitHub when Christopher asks
-- Import from http://www.weimann.us/showlinks.cgi and categorize with agent help
+- Further categorize the large inbox with agent help
 - Optional Chrome extension (bookmarklet is enough for now)
 

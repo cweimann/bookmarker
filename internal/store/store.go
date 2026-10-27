@@ -46,8 +46,21 @@ type Store struct {
 	mu      sync.Mutex
 }
 
-// DefaultFolder is where /add (bookmarklet) lands.
+// DefaultFolder / DefaultFolderTitle are permanent; bookmarklet /add lands here.
+// The folder and its Inbox cannot be renamed or deleted.
 const DefaultFolder = "unfiled"
+const DefaultFolderTitle = "Unfiled"
+
+// ProtectedFolder reports whether a folder slug is the permanent Unfiled folder.
+func ProtectedFolder(slug string) bool {
+	return strings.TrimSpace(slug) == DefaultFolder
+}
+
+// ProtectedCategory reports whether a category is a permanent Inbox (any folder).
+func ProtectedCategory(slug string) bool {
+	s := strings.TrimSpace(slug)
+	return s == "" || s == "inbox"
+}
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
@@ -60,10 +73,19 @@ func New(dataDir string) (*Store, error) {
 	if err := s.migrateLegacyIfNeeded(); err != nil {
 		return nil, err
 	}
-	if err := s.ensureFolder(DefaultFolder, "Unfiled"); err != nil {
+	if err := s.ensureDefaults(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// ensureDefaults creates Unfiled + its Inbox if missing and restores the canonical title.
+func (s *Store) ensureDefaults() error {
+	if err := s.ensureFolder(DefaultFolder, DefaultFolderTitle); err != nil {
+		return err
+	}
+	// Keep display title locked even if _folder.md was edited by hand.
+	return atomicWrite(s.folderMetaPath(DefaultFolder), "# "+DefaultFolderTitle+"\n")
 }
 
 // Slugify turns a title into a filesystem-safe slug.
@@ -138,6 +160,13 @@ func (s *Store) listFoldersUnlocked() ([]Folder, error) {
 		out = append(out, Folder{Slug: slug, Title: title})
 	}
 	sort.Slice(out, func(i, j int) bool {
+		// Permanent Unfiled first, then A–Z.
+		if out[i].Slug == DefaultFolder {
+			return true
+		}
+		if out[j].Slug == DefaultFolder {
+			return false
+		}
 		return strings.ToLower(out[i].Title) < strings.ToLower(out[j].Title)
 	})
 	return out, nil
@@ -161,6 +190,9 @@ func (s *Store) CreateFolder(title string) (Folder, error) {
 		return Folder{}, fmt.Errorf("title required")
 	}
 	slug := Slugify(title)
+	if ProtectedFolder(slug) {
+		return Folder{}, fmt.Errorf("%s is reserved", DefaultFolderTitle)
+	}
 	if _, err := os.Stat(s.folderDir(slug)); err == nil {
 		return Folder{}, fmt.Errorf("folder %q already exists", slug)
 	}

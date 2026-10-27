@@ -16,8 +16,14 @@ func (s *Store) RenameFolder(slug, newTitle string) (Folder, error) {
 	if slug == "" {
 		return Folder{}, fmt.Errorf("slug required")
 	}
+	if ProtectedFolder(slug) {
+		return Folder{}, fmt.Errorf("cannot rename the permanent %s folder", DefaultFolderTitle)
+	}
 	if newTitle == "" {
 		return Folder{}, fmt.Errorf("title required")
+	}
+	if Slugify(newTitle) == DefaultFolder {
+		return Folder{}, fmt.Errorf("%s is reserved", DefaultFolderTitle)
 	}
 	if _, err := os.Stat(s.folderDir(slug)); err != nil {
 		return Folder{}, fmt.Errorf("folder not found: %s", slug)
@@ -52,8 +58,8 @@ func (s *Store) RenameCategory(folder, slug, newTitle string) (Category, error) 
 	if folder == "" || slug == "" {
 		return Category{}, fmt.Errorf("folder and slug required")
 	}
-	if slug == "inbox" {
-		return Category{}, fmt.Errorf("cannot rename inbox")
+	if ProtectedCategory(slug) {
+		return Category{}, fmt.Errorf("cannot rename the permanent Inbox")
 	}
 	if newTitle == "" {
 		return Category{}, fmt.Errorf("title required")

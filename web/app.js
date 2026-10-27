@@ -72,6 +72,14 @@
     return btn;
   }
 
+  function isProtectedFolder(slug) {
+    return slug === "unfiled";
+  }
+
+  function isProtectedCategory(slug) {
+    return !slug || slug === "inbox";
+  }
+
   function setEditMode(on) {
     editMode = !!on;
     document.body.classList.toggle("edit-mode", editMode);
@@ -196,6 +204,10 @@
   }
 
   async function renameFolder(f) {
+    if (isProtectedFolder(f.slug)) {
+      alert("Unfiled cannot be renamed.");
+      return;
+    }
     const title = prompt("Rename folder:", f.title);
     if (title === null) return;
     const trimmed = title.trim();
@@ -218,7 +230,10 @@
   }
 
   async function renameCategory(c) {
-    if (c.inbox) return;
+    if (c.inbox || isProtectedCategory(c.slug)) {
+      alert("Inbox cannot be renamed.");
+      return;
+    }
     const title = prompt("Rename category:", c.title);
     if (title === null) return;
     const trimmed = title.trim();
@@ -292,9 +307,11 @@
       wireFolderDrop(row);
 
       row.appendChild(btn);
-      row.appendChild(
-        pencilBtn("Rename folder", () => renameFolder(f))
-      );
+      if (!isProtectedFolder(f.slug)) {
+        row.appendChild(
+          pencilBtn("Rename folder", () => renameFolder(f))
+        );
+      }
       folderList.appendChild(row);
     });
   }

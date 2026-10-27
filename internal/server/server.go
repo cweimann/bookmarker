@@ -63,7 +63,8 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	url := first(r.Form.Get("url"), r.URL.Query().Get("url"))
 	title := first(r.Form.Get("title"), r.URL.Query().Get("title"))
 	source := first(r.Form.Get("source"), r.URL.Query().Get("source"), "bookmarklet")
-	folder := first(r.Form.Get("folder"), r.URL.Query().Get("folder"), store.DefaultFolder)
+	// Bookmarklet /add always lands in permanent Unfiled → Inbox.
+	folder := store.DefaultFolder
 
 	b, err := s.Store.AddToFolderInbox(folder, title, url, source)
 	if err != nil {

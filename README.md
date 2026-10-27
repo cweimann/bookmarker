@@ -44,7 +44,7 @@ Create a bookmark whose URL is (adjust host/port if you changed `-addr`):
 javascript:(function(){var u=encodeURIComponent(location.href);var t=encodeURIComponent(document.title);location.href='http://127.0.0.1:8787/add?url='+u+'&title='+t+'&source=bookmarklet';})();
 ```
 
-`GET` or `POST` `/add?url=&title=&source=` appends to the **Unfiled** folder inbox (`?folder=` optional). With a `Referer` header it redirects back; otherwise it shows a short confirmation.
+`GET` or `POST` `/add?url=&title=&source=` always appends to the permanent **Unfiled → Inbox**. Unfiled and its Inbox cannot be renamed or deleted. With a `Referer` header it redirects back; otherwise it shows a short confirmation.
 
 ## Data layout
 
@@ -98,7 +98,7 @@ Fields: `id` (UUID), `url`, `source`, `saved` (RFC3339 UTC). Writes are atomic (
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET/POST | `/add` | Save to Unfiled inbox (or `?folder=`) |
+| GET/POST | `/add` | Save to permanent Unfiled → Inbox |
 | GET/POST | `/api/folders` | List / create folders |
 | GET | `/api/categories?folder=` | List categories (+ inbox) |
 | POST | `/api/categories` | Create `{ "folder", "title" }` |

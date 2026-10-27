@@ -16,6 +16,11 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: var(--font);
@@ -24,13 +29,15 @@ body {
     radial-gradient(circle at 10% 0%, #dbeafe 0%, transparent 40%),
     radial-gradient(circle at 90% 10%, #fde68a 0%, transparent 35%),
     var(--bg);
-  min-height: 100vh;
+  overflow: hidden;
 }
 
 .app {
   display: grid;
   grid-template-columns: 12.5rem 13.5rem 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .col {
@@ -41,6 +48,9 @@ body {
   flex-direction: column;
   gap: 0.85rem;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .brand h1 {
@@ -60,8 +70,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.new-item {
+  flex-shrink: 0;
 }
 
 .nav-item {
@@ -133,8 +149,12 @@ body {
 }
 
 .main {
-  padding: 1.35rem 1.75rem 2rem;
+  padding: 1.35rem 1.75rem 1.5rem;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .main-header-row {
@@ -301,13 +321,26 @@ body.edit-mode .bookmark .delete-x {
 }
 
 @media (max-width: 900px) {
+  body {
+    overflow: auto;
+  }
+
   .app {
     grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
   }
 
   .col {
     border-right: none;
     border-bottom: 1px solid var(--line);
+    height: auto;
+    overflow: visible;
+  }
+
+  .main {
+    height: auto;
+    overflow: visible;
   }
 
   .bookmark .host {

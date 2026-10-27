@@ -1,8 +1,8 @@
-# Bookmarker
+﻿# Bookmarker
 
 Local-first bookmark manager: a small Go HTTP server that stores bookmarks as Markdown files. Replaces the old weimann.us CGI list.
 
-No GitHub remote yet — push later when ready.
+No GitHub remote yet â€” push later when ready.
 
 ## Requirements
 
@@ -89,8 +89,18 @@ Fields: `id` (UUID), `url`, `source`, `saved` (RFC3339 UTC). Writes are atomic (
 | POST | `/api/move` | `{ "id", "from", "to" }` |
 | POST | `/api/bookmarks/delete` | `{ "id", "category" }` |
 
+## Import from old CGI
+
+`scripts/import_showlinks.py` fetches http://www.weimann.us/showlinks.cgi (or uses cached `old-cgi.html`), categorizes by URL/title heuristics, and merges into `data/` without deleting local bookmarks (sources not starting with `showlinks:`). Re-run refreshes the imported set:
+
+```powershell
+python scripts\import_showlinks.py
+python scripts\import_showlinks.py --refetch
+```
+
 ## Later
 
 - Push this repo to GitHub when Christopher asks
 - Import from http://www.weimann.us/showlinks.cgi and categorize with agent help
 - Optional Chrome extension (bookmarklet is enough for now)
+

@@ -45,15 +45,12 @@
     }
   }
 
-  function sshGlyph() {
+  function protoGlyph(char, title) {
     const span = document.createElement("span");
     span.className = "proto-glyph";
     span.setAttribute("aria-hidden", "true");
-    span.title = "SSH";
-    span.innerHTML =
-      '<svg viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">' +
-      '<path d="M8.5 2a3.5 3.5 0 0 0-1.37 6.72L3 12.85V14h1.5l.5-.5.5.5H7v-1.5l.5-.5.5.5H9v-1.15l1.78-1.78A3.5 3.5 0 1 0 8.5 2Zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/>' +
-      "</svg>";
+    span.title = title;
+    span.textContent = char;
     return span;
   }
 
@@ -483,7 +480,9 @@
       li.dataset.id = b.id;
 
       if (proto === "ssh") {
-        li.appendChild(sshGlyph());
+        li.appendChild(protoGlyph("\u{1F5A5}", "SSH")); // 🖥
+      } else if (proto === "http" || proto === "https") {
+        li.appendChild(protoGlyph("\u{1F310}", "Web")); // 🌐
       }
 
       const link = document.createElement("a");

@@ -337,16 +337,15 @@ body.edit-mode .edit-pencil {
 
 .bookmark .proto-glyph {
   flex-shrink: 0;
-  width: 0.95rem;
-  height: 0.95rem;
-  color: var(--ssh);
+  font-size: 0.95rem;
+  line-height: 1;
+  width: 1.15rem;
+  text-align: center;
   opacity: 0.95;
 }
 
-.bookmark .proto-glyph svg {
-  display: block;
-  width: 100%;
-  height: 100%;
+.bookmark.proto-ssh .proto-glyph {
+  color: var(--ssh);
 }
 
 .bookmark .title {

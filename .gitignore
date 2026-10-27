@@ -2,6 +2,8 @@
 /bookmarker.exe
 *.exe
 data/
+data.bak*/
+data.bak-tree/
 .tmp-*
 old-cgi.html
 homepage-bookmarks.json

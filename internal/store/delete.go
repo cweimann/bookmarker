@@ -1,7 +1,7 @@
 package store
 
 import (
-	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,25 +10,27 @@ import (
 // DeleteFolder removes a folder and promotes its children one level toward root.
 // Same-named categories merge bookmarks; same-named folders merge recursively.
 // The deleted folder's inbox bookmarks merge into the parent's inbox.
-// Root (empty path) cannot be deleted.
+// Root (empty path) cannot be deleted. A folder holding files other than
+// Markdown lists is refused, since the final RemoveAll would discard them.
 func (s *Store) DeleteFolder(folderPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	folderPath = cleanPath(folderPath)
-	if folderPath == "" {
-		return fmt.Errorf("cannot delete root")
+	folderPath, src, err := s.folder(folderPath)
+	if err != nil {
+		return err
 	}
-	src := s.abs(folderPath)
-	st, err := os.Stat(src)
-	if err != nil || !st.IsDir() {
-		return fmt.Errorf("folder not found: %s", folderPath)
+	if folderPath == "" {
+		return errf(ErrInvalid, "cannot delete root")
+	}
+	if extra, err := nonListFiles(src); err != nil {
+		return err
+	} else if len(extra) > 0 {
+		return errf(ErrInvalid, "folder %s contains non-bookmark files (%s); move them out first",
+			folderPath, strings.Join(extra, ", "))
 	}
 
-	parent := ""
-	if i := strings.LastIndex(folderPath, "/"); i >= 0 {
-		parent = folderPath[:i]
-	}
+	parent := parentOf(folderPath)
 	if err := s.ensureFolderPath(parent); err != nil {
 		return err
 	}
@@ -84,4 +86,26 @@ func (s *Store) DeleteFolder(folderPath string) error {
 	}
 
 	return os.RemoveAll(src)
+}
+
+// nonListFiles returns files under dir that are neither .md lists nor
+// leftover atomicWrite temp files.
+func nonListFiles(dir string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasSuffix(name, ".md") || strings.HasPrefix(name, ".tmp-") {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, p)
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	return out, err
 }

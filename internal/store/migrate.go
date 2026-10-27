@@ -86,8 +86,8 @@ func (s *Store) migrateLegacyIfNeeded() error {
 					return err
 				}
 				_ = os.Remove(src)
-			} else {
-				_ = os.Rename(src, dst)
+			} else if err := os.Rename(src, dst); err != nil {
+				return err
 			}
 		}
 		_ = os.Remove(legacyCats)
@@ -140,8 +140,8 @@ func (s *Store) promoteUnfiled(src string) error {
 			if err := s.mergeFileInto(srcFile, dstFile, ""); err != nil {
 				return err
 			}
-		} else {
-			_ = os.Rename(srcFile, dstFile)
+		} else if err := os.Rename(srcFile, dstFile); err != nil {
+			return err
 		}
 	}
 	return nil

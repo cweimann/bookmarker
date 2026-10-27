@@ -1,53 +1,45 @@
 package store
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
-// RenameFolder updates title and optionally renames the directory (last path segment).
+// RenameFolder updates title and renames the directory when the slug changes.
 func (s *Store) RenameFolder(folderPath, newTitle string) (FolderRef, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	folderPath = cleanPath(folderPath)
-	newTitle = strings.TrimSpace(newTitle)
+	folderPath, dir, err := s.folder(folderPath)
+	if err != nil {
+		return FolderRef{}, err
+	}
+	newTitle = cleanLine(newTitle)
+	if newTitle == "" {
+		return FolderRef{}, errf(ErrInvalid, "title required")
+	}
 	if folderPath == "" {
 		// Root: title only, no directory rename.
-		if newTitle == "" {
-			return FolderRef{}, fmt.Errorf("title required")
-		}
 		if err := atomicWrite(s.metaPath(""), "# "+newTitle+"\n"); err != nil {
 			return FolderRef{}, err
 		}
 		return FolderRef{Slug: "", Title: newTitle, Path: ""}, nil
 	}
-	if newTitle == "" {
-		return FolderRef{}, fmt.Errorf("title required")
-	}
-	if _, err := os.Stat(s.abs(folderPath)); err != nil {
-		return FolderRef{}, fmt.Errorf("folder not found: %s", folderPath)
-	}
 
 	newSlug := Slugify(newTitle)
-	parent := ""
-	if i := strings.LastIndex(folderPath, "/"); i >= 0 {
-		parent = folderPath[:i]
+	if newSlug == "inbox" {
+		return FolderRef{}, errf(ErrInvalid, "reserved name")
 	}
-	oldSlug := folderPath
-	if i := strings.LastIndex(folderPath, "/"); i >= 0 {
-		oldSlug = folderPath[i+1:]
-	}
+	parent := parentOf(folderPath)
+	oldSlug := strings.TrimPrefix(folderPath[len(parent):], "/")
 
 	finalPath := folderPath
 	if newSlug != oldSlug {
 		dest := joinPath(parent, newSlug)
 		if _, err := os.Stat(s.abs(dest)); err == nil {
-			return FolderRef{}, fmt.Errorf("folder %q already exists", newSlug)
+			return FolderRef{}, errf(ErrExists, "folder %q already exists", newSlug)
 		}
-		if err := os.Rename(s.abs(folderPath), s.abs(dest)); err != nil {
+		if err := os.Rename(dir, s.abs(dest)); err != nil {
 			return FolderRef{}, err
 		}
 		finalPath = dest
@@ -55,50 +47,55 @@ func (s *Store) RenameFolder(folderPath, newTitle string) (FolderRef, error) {
 	if err := atomicWrite(s.metaPath(finalPath), "# "+newTitle+"\n"); err != nil {
 		return FolderRef{}, err
 	}
-	return FolderRef{
-		Slug:  filepath.Base(filepath.FromSlash(finalPath)),
-		Title: newTitle,
-		Path:  finalPath,
-	}, nil
+	return FolderRef{Slug: newSlug, Title: newTitle, Path: finalPath}, nil
 }
 
-// RenameCategory updates title and renames the .md when slug changes.
+// RenameCategory updates title and renames the .md when the slug changes.
 func (s *Store) RenameCategory(folderPath, slug, newTitle string) (CategoryRef, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	folderPath = cleanPath(folderPath)
-	slug = strings.TrimSpace(slug)
-	newTitle = strings.TrimSpace(newTitle)
-	if slug == "" || slug == "inbox" {
-		return CategoryRef{}, fmt.Errorf("cannot rename Inbox")
-	}
-	if newTitle == "" {
-		return CategoryRef{}, fmt.Errorf("title required")
-	}
-	src := s.listPath(folderPath, slug)
-	list, err := parseBookmarksFile(src)
+	folderPath, _, err := s.folder(folderPath)
 	if err != nil {
-		return CategoryRef{}, fmt.Errorf("category not found: %s/%s", folderPath, slug)
-	}
-	newSlug := Slugify(newTitle)
-	if newSlug == "inbox" || newSlug == "_folder" {
-		return CategoryRef{}, fmt.Errorf("reserved name")
-	}
-	if newSlug != slug {
-		dst := s.listPath(folderPath, newSlug)
-		if _, err := os.Stat(dst); err == nil {
-			return CategoryRef{}, fmt.Errorf("category %q already exists", newSlug)
-		}
-		if err := writeBookmarksFile(dst, newTitle, list); err != nil {
-			return CategoryRef{}, err
-		}
-		_ = os.Remove(src)
-		slug = newSlug
-	} else if err := writeBookmarksFile(src, newTitle, list); err != nil {
 		return CategoryRef{}, err
 	}
-	return CategoryRef{Slug: slug, Title: newTitle, Inbox: false}, nil
+	slug, err = parseCategory(slug)
+	if err != nil {
+		return CategoryRef{}, err
+	}
+	if slug == "inbox" {
+		return CategoryRef{}, errf(ErrInvalid, "cannot rename Inbox")
+	}
+	newTitle = cleanLine(newTitle)
+	if newTitle == "" {
+		return CategoryRef{}, errf(ErrInvalid, "title required")
+	}
+	src := s.listPath(folderPath, slug)
+	if _, err := os.Stat(src); err != nil {
+		return CategoryRef{}, errf(ErrNotFound, "category not found: %s", joinPath(folderPath, slug))
+	}
+	list, err := parseBookmarksFile(src)
+	if err != nil {
+		return CategoryRef{}, err
+	}
+	newSlug := Slugify(newTitle)
+	if newSlug == "inbox" {
+		return CategoryRef{}, errf(ErrInvalid, "reserved name")
+	}
+	dst := src
+	if newSlug != slug {
+		dst = s.listPath(folderPath, newSlug)
+		if _, err := os.Stat(dst); err == nil {
+			return CategoryRef{}, errf(ErrExists, "category %q already exists", newSlug)
+		}
+		if err := os.Rename(src, dst); err != nil {
+			return CategoryRef{}, err
+		}
+	}
+	if err := writeBookmarksFile(dst, newTitle, list); err != nil {
+		return CategoryRef{}, err
+	}
+	return CategoryRef{Slug: newSlug, Title: newTitle, Inbox: false}, nil
 }
 
 // UpdateBookmark changes title and/or URL for a bookmark by ID.
@@ -107,13 +104,21 @@ func (s *Store) UpdateBookmark(folderPath, category, id, title, url string) (Boo
 	defer s.mu.Unlock()
 
 	id = strings.TrimSpace(id)
-	title = strings.TrimSpace(title)
-	url = strings.TrimSpace(url)
+	title = cleanLine(title)
 	if id == "" {
-		return Bookmark{}, fmt.Errorf("id required")
+		return Bookmark{}, errf(ErrInvalid, "id required")
+	}
+	if strings.TrimSpace(url) != "" {
+		u, err := cleanURL(url)
+		if err != nil {
+			return Bookmark{}, err
+		}
+		url = u
+	} else {
+		url = ""
 	}
 	if title == "" && url == "" {
-		return Bookmark{}, fmt.Errorf("title or url required")
+		return Bookmark{}, errf(ErrInvalid, "title or url required")
 	}
 	path, fileTitle, err := s.resolve(folderPath, category)
 	if err != nil {
@@ -123,26 +128,18 @@ func (s *Store) UpdateBookmark(folderPath, category, id, title, url string) (Boo
 	if err != nil {
 		return Bookmark{}, err
 	}
-	var updated *Bookmark
-	for i := range list {
-		if list[i].ID != id {
-			continue
-		}
-		if title != "" {
-			list[i].Title = title
-		}
-		if url != "" {
-			list[i].URL = url
-		}
-		cp := list[i]
-		updated = &cp
-		break
+	i := indexOf(list, id)
+	if i < 0 {
+		return Bookmark{}, errf(ErrNotFound, "bookmark not found: %s", id)
 	}
-	if updated == nil {
-		return Bookmark{}, fmt.Errorf("bookmark not found: %s", id)
+	if title != "" {
+		list[i].Title = title
+	}
+	if url != "" {
+		list[i].URL = url
 	}
 	if err := writeBookmarksFile(path, fileTitle, list); err != nil {
 		return Bookmark{}, err
 	}
-	return *updated, nil
+	return list[i], nil
 }

@@ -284,6 +284,7 @@ func (s *Store) CreateCategory(folder, title string) (Category, error) {
 }
 
 // MoveCategory relocates a category file between folders (not inbox).
+// Idempotent: if the file is already only in toFolder, returns nil.
 func (s *Store) MoveCategory(slug, fromFolder, toFolder string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -305,10 +306,16 @@ func (s *Store) MoveCategory(slug, fromFolder, toFolder string) error {
 	}
 	src := s.listPath(fromFolder, slug)
 	dst := s.listPath(toFolder, slug)
-	if _, err := os.Stat(src); err != nil {
+	_, srcErr := os.Stat(src)
+	_, dstErr := os.Stat(dst)
+	if srcErr != nil && dstErr == nil {
+		// Already moved (e.g. duplicate drop event).
+		return nil
+	}
+	if srcErr != nil {
 		return fmt.Errorf("category not found: %s/%s", fromFolder, slug)
 	}
-	if _, err := os.Stat(dst); err == nil {
+	if dstErr == nil {
 		return fmt.Errorf("category %q already exists in %s", slug, toFolder)
 	}
 	return os.Rename(src, dst)

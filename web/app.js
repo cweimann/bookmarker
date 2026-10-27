@@ -118,6 +118,7 @@
     el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
     el.addEventListener("drop", async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       el.classList.remove("drop-target");
       const toFolder = el.dataset.folder;
       const catSlug = e.dataTransfer.getData("text/category-slug");
@@ -134,11 +135,11 @@
               toFolder,
             }),
           });
+          if (currentFolder === fromFolder && currentCategory === catSlug) {
+            currentCategory = "inbox";
+          }
           if (currentFolder === fromFolder || currentFolder === toFolder) {
             await loadCategories();
-            if (currentFolder === fromFolder && currentCategory === catSlug) {
-              currentCategory = "inbox";
-            }
             await loadBookmarks();
           }
         } catch (err) {
@@ -179,6 +180,7 @@
     el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
     el.addEventListener("drop", async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       el.classList.remove("drop-target");
       const id = e.dataTransfer.getData("text/bookmark-id");
       const fromFolder = e.dataTransfer.getData("text/bookmark-folder");
@@ -303,7 +305,7 @@
         await loadCategories();
         await loadBookmarks();
       });
-      wireFolderDrop(btn);
+      // Wire drop only on the row (not the button) to avoid double-fire via bubbling.
       wireFolderDrop(row);
 
       row.appendChild(btn);
@@ -344,7 +346,6 @@
           e.dataTransfer.effectAllowed = "move";
         });
       }
-      wireCategoryDrop(btn);
       wireCategoryDrop(row);
 
       row.appendChild(btn);

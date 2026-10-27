@@ -18,8 +18,10 @@ import (
 type Server struct {
 	Store  *store.Store
 	Static fs.FS
-	// Allow lists client networks; empty means loopback only.
-	Allow []netip.Prefix
+	// Edit lists client networks that may mutate. Empty Edit+View means loopback.
+	Edit []netip.Prefix
+	// View lists view-only client networks (edit is not duplicated here).
+	View []netip.Prefix
 	// Hosts are Host-header names accepted besides IP literals and localhost.
 	Hosts []string
 }
@@ -78,6 +80,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"maxColumns": store.MaxColumns,
+		"canEdit":    s.clientCanEdit(r.RemoteAddr),
 	})
 }
 

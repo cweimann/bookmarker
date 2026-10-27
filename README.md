@@ -27,24 +27,28 @@ Settings come from `bookmarker.yaml`. The server uses the first one it finds:
 2. `bookmarker.yaml` in the working directory
 3. `bookmarker.yaml` next to the executable
 
-With no file it falls back to the built-in defaults below (loopback only). `bookmarker.yaml` is gitignored; start from [`bookmarker.example.yaml`](bookmarker.example.yaml), which has this machine's values:
+With no file it falls back to the built-in defaults below (loopback editors only). `bookmarker.yaml` is gitignored; start from [`bookmarker.example.yaml`](bookmarker.example.yaml), which has this machine's values:
 
 ```yaml
 listen:
   - 127.0.0.1:8787
   - 10.1.32.219:8787
-allow:
+edit:
   - 127.0.0.1
   - 10.1.32.0/24
+view: []
 data: data
 ```
 
 | Key | Meaning | Default |
 |-----|---------|---------|
 | `listen` | Addresses to listen on, one listener each. `0.0.0.0:8787` only if you list it. An address that cannot be bound (interface down) is logged and skipped; the server exits only if none bind. | `[127.0.0.1:8787]` |
-| `allow` | Client IPs or CIDRs allowed to connect; everyone else gets 403. | `[127.0.0.1, ::1]` |
+| `edit` | Client IPs or CIDRs that may mutate (Edit mode, Add bookmark, `/add`, API writes). Edit implies view. | `[127.0.0.1, ::1]` |
+| `view` | Optional view-only client IPs/CIDRs. May browse; mutating APIs return 403. Entries under `edit` need not be repeated. | `[]` |
 | `hosts` | Extra DNS names accepted in the `Host` header. IP literals and `localhost` are always accepted; other names get 421 (blocks DNS rebinding). | `[]` |
 | `data` | Bookmark directory. Relative paths resolve against the config file's directory. | `data` |
+
+At least one of `edit` or `view` must be non-empty. Anyone not on either list gets 403.
 
 Unknown keys are an error, so typos fail at startup. Flags override the file: `-addr` (comma-separated, replaces `listen`; env `BOOKMARKER_ADDR`) and `-data` (env `BOOKMARKER_DATA`, relative to the working directory).
 
@@ -56,7 +60,7 @@ Open http://127.0.0.1:8787/ on this machine or http://10.1.32.219:8787/ from the
 
 ## Security model
 
-There is no login; access control is the listen addresses plus the client allowlist. On top of that:
+There is no login; access control is the listen addresses plus the **edit** / **view** client lists. Edit clients can mutate; view-only clients can browse (GET listing/bookmarks/UI) but get 403 on `/add` and every mutating API. The UI hides Edit / Add bookmark for view-only clients, and drag/drop is off unless Edit mode is on (editors included). On top of that:
 
 - API writes must be same-origin JSON: `Content-Type: application/json` is required, and a foreign `Origin` or `Sec-Fetch-Site: cross-site` is refused. Other websites cannot drive the API from your browser.
 - `/add` stays a plain GET for the bookmarklet but refuses subresource loads (`Sec-Fetch-Dest` other than `document`), so a page cannot plant bookmarks with an `<img>` tag.
@@ -105,8 +109,8 @@ Deleting a folder promotes its contents one level up (same-named categories and 
 ## UI
 
 - Up to **3 columns**: root → selected folder → nested folder. Each column lists Inbox, categories, and child folders; Add creates a category or folder.
-- Main pane: one-line bookmarks (ssh stripe/glyph, Edit pencils/×). Sticky title/Edit; side columns do not scroll with the list.
-- Drag bookmarks onto categories/folders; drag categories onto folders.
+- Main pane: one-line bookmarks (ssh stripe/glyph, Edit pencils/×). Sticky title / Add bookmark / Edit; side columns do not scroll with the list.
+- Drag bookmarks onto categories/folders (and categories onto folders) only while Edit mode is on.
 
 ## API (used by the UI)
 
@@ -115,7 +119,7 @@ POSTs take JSON bodies and must send `Content-Type: application/json`. Errors ar
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET/POST | `/add` | Save to root Inbox (bookmarklet) |
-| GET | `/api/config` | `{ maxColumns }` |
+| GET | `/api/config` | `{ maxColumns, canEdit }` |
 | GET | `/api/listing?path=` | Folders + categories at path (`""` = root) |
 | POST | `/api/folders` | `{ parentPath, title }` |
 | POST | `/api/folders/rename` | `{ path, title }` |

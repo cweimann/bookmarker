@@ -1,7 +1,8 @@
 # Copy to bookmarker.yaml (next to bookmarker.exe, or in the directory you
 # start it from) and adjust. Keys you leave out keep the built-in defaults:
 #   listen: [127.0.0.1:8787]
-#   allow:  [127.0.0.1, ::1]
+#   edit:   [127.0.0.1, ::1]
+#   view:   []   # empty is fine; edit already implies view
 #   data:   data
 
 # Addresses to listen on, one listener each. Use explicit interface addresses;
@@ -11,10 +12,15 @@ listen:
   - 127.0.0.1:8787
   - 10.1.32.219:8787
 
-# Client IPs or CIDR ranges allowed to connect. Everyone else gets 403.
-allow:
+# Clients that may mutate (Edit mode, Add bookmark, bookmarklet /add, API writes).
+# Edit always includes view rights — no need to repeat these under view.
+edit:
   - 127.0.0.1
   - 10.1.32.0/24
+
+# Optional view-only clients (browse lists; no Edit / Add / drag / mutating APIs).
+# Leave empty when the LAN is already under edit, as here.
+view: []
 
 # Extra DNS names accepted in the Host header. IP literals and localhost are
 # always accepted; any other name is refused to block DNS rebinding.

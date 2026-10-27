@@ -16,6 +16,7 @@
   /** listings cache by path */
   let listings = {};
   let editMode = false;
+  let canEdit = true;
   /** bumps on every loadBookmarks so stale responses are dropped */
   let bookmarkSeq = 0;
   const blockedSchemes = new Set(["javascript", "vbscript", "data", "blob"]);
@@ -111,10 +112,31 @@
   }
 
   function setEditMode(on) {
-    editMode = !!on;
+    if (!canEdit) {
+      editMode = false;
+    } else {
+      editMode = !!on;
+    }
     document.body.classList.toggle("edit-mode", editMode);
     editToggle.setAttribute("aria-pressed", editMode ? "true" : "false");
     editToggle.textContent = editMode ? "Done" : "Edit";
+    applyDragState();
+  }
+
+  function applyDragState() {
+    document.querySelectorAll(".nav-item:not(.inbox)").forEach((el) => {
+      el.draggable = editMode;
+    });
+    document.querySelectorAll(".bookmark").forEach((el) => {
+      el.draggable = editMode;
+    });
+  }
+
+  function applyCanEditUI() {
+    document.body.classList.toggle("view-only", !canEdit);
+    if (editToggle) editToggle.hidden = !canEdit;
+    if (addBookmarkBtn) addBookmarkBtn.hidden = !canEdit;
+    if (!canEdit) setEditMode(false);
   }
 
   function updateListTitle() {
@@ -146,6 +168,7 @@
 
   function wireFolderDrop(el, folderPath) {
     el.addEventListener("dragover", (e) => {
+      if (!editMode) return;
       const types = e.dataTransfer.types;
       if (
         types.includes("text/category-slug") ||
@@ -160,6 +183,7 @@
       e.preventDefault();
       e.stopPropagation();
       el.classList.remove("drop-target");
+      if (!editMode) return;
       const catSlug = e.dataTransfer.getData("text/category-slug");
       const fromPath = e.dataTransfer.getData("text/category-path");
       if (catSlug && fromPath !== undefined) {
@@ -208,6 +232,7 @@
 
   function wireCategoryDrop(el, folderPath, categorySlug) {
     el.addEventListener("dragover", (e) => {
+      if (!editMode) return;
       if (e.dataTransfer.types.includes("text/bookmark-id")) {
         e.preventDefault();
         el.classList.add("drop-target");
@@ -218,6 +243,7 @@
       e.preventDefault();
       e.stopPropagation();
       el.classList.remove("drop-target");
+      if (!editMode) return;
       const id = e.dataTransfer.getData("text/bookmark-id");
       const fromPath = e.dataTransfer.getData("text/bookmark-path");
       const fromCategory = e.dataTransfer.getData("text/bookmark-category");
@@ -442,12 +468,16 @@
       btn.type = "button";
       btn.className = "nav-item" + (c.inbox ? " inbox" : "");
       btn.textContent = c.title;
-      btn.draggable = !c.inbox;
+      btn.draggable = editMode && !c.inbox;
       btn.addEventListener("click", () =>
         selectCategory(path || "", c.slug, c.title)
       );
       if (!c.inbox) {
         btn.addEventListener("dragstart", (e) => {
+          if (!editMode) {
+            e.preventDefault();
+            return;
+          }
           e.dataTransfer.setData("text/category-slug", c.slug);
           e.dataTransfer.setData("text/category-path", path || "");
           e.dataTransfer.effectAllowed = "move";
@@ -497,52 +527,54 @@
 
     col.appendChild(nav);
 
-    // Add folder or category
-    const canAddFolder = colIndex < maxColumns - 1;
-    const add = document.createElement("form");
-    add.className = "add-bar";
-    add.innerHTML =
-      '<div class="row">' +
-      '<input type="text" name="title" placeholder="Name" required autocomplete="off">' +
-      "</div>" +
-      '<div class="row">' +
-      '<select name="kind">' +
-      '<option value="category">Category</option>' +
-      (canAddFolder ? '<option value="folder">Folder</option>' : "") +
-      "</select>" +
-      '<button type="submit">Add</button>' +
-      "</div>";
-    add.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const titleInput = add.elements.namedItem("title");
-      const title = titleInput.value.trim();
-      const kind = add.elements.namedItem("kind").value;
-      if (!title) return;
-      try {
-        if (kind === "folder") {
-          const f = await api("/api/folders", {
-            method: "POST",
-            body: JSON.stringify({ parentPath: path || "", title }),
-          });
-          titleInput.value = "";
-          await refreshVisible();
-          selectFolder(colIndex, f);
-        } else {
-          const c = await api("/api/categories", {
-            method: "POST",
-            body: JSON.stringify({ path: path || "", title }),
-          });
-          titleInput.value = "";
-          await refreshVisible();
-          selectCategory(path || "", c.slug, c.title);
+    // Add folder or category (editors only)
+    if (canEdit) {
+      const canAddFolder = colIndex < maxColumns - 1;
+      const add = document.createElement("form");
+      add.className = "add-bar";
+      add.innerHTML =
+        '<div class="row">' +
+        '<input type="text" name="title" placeholder="Name" required autocomplete="off">' +
+        "</div>" +
+        '<div class="row">' +
+        '<select name="kind">' +
+        '<option value="category">Category</option>' +
+        (canAddFolder ? '<option value="folder">Folder</option>' : "") +
+        "</select>" +
+        '<button type="submit">Add</button>' +
+        "</div>";
+      add.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const titleInput = add.elements.namedItem("title");
+        const title = titleInput.value.trim();
+        const kind = add.elements.namedItem("kind").value;
+        if (!title) return;
+        try {
+          if (kind === "folder") {
+            const f = await api("/api/folders", {
+              method: "POST",
+              body: JSON.stringify({ parentPath: path || "", title }),
+            });
+            titleInput.value = "";
+            await refreshVisible();
+            selectFolder(colIndex, f);
+          } else {
+            const c = await api("/api/categories", {
+              method: "POST",
+              body: JSON.stringify({ path: path || "", title }),
+            });
+            titleInput.value = "";
+            await refreshVisible();
+            selectCategory(path || "", c.slug, c.title);
+          }
+        } catch (err) {
+          alert(err.message);
         }
-      } catch (err) {
-        alert(err.message);
-      }
-    });
+      });
+      col.appendChild(add);
+    }
     // Also allow dropping onto the column itself (folder path = this column)
     wireFolderDrop(col, path || "");
-    col.appendChild(add);
 
     return col;
   }
@@ -570,7 +602,7 @@
       const proto = protocolOf(b.url);
       const li = document.createElement("li");
       li.className = "bookmark proto-" + (proto || "other");
-      li.draggable = true;
+      li.draggable = editMode;
       li.dataset.id = b.id;
 
       if (proto === "ssh") {
@@ -624,6 +656,10 @@
       li.appendChild(del);
 
       li.addEventListener("dragstart", (e) => {
+        if (!editMode) {
+          e.preventDefault();
+          return;
+        }
         if (
           e.target.closest &&
           (e.target.closest(".delete-x") || e.target.closest(".edit-pencil"))
@@ -691,6 +727,8 @@
     try {
       const cfg = await api("/api/config");
       if (cfg.maxColumns) maxColumns = cfg.maxColumns;
+      canEdit = cfg.canEdit !== false;
+      applyCanEditUI();
       await fetchListing("");
       renderAllColumns();
       await loadBookmarks();

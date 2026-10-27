@@ -46,7 +46,11 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatal(err)
 	}
-	allow, err := cfg.AllowedNets()
+	editNets, err := cfg.EditNets()
+	if err != nil {
+		log.Fatal(err)
+	}
+	viewNets, err := cfg.ViewNets()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,7 +63,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	handler := (&server.Server{Store: st, Static: static, Allow: allow, Hosts: cfg.Hosts}).Handler()
+	handler := (&server.Server{
+		Store:  st,
+		Static: static,
+		Edit:   editNets,
+		View:   viewNets,
+		Hosts:  cfg.Hosts,
+	}).Handler()
 
 	if path == "" {
 		log.Printf("config: none found, using defaults (%s)", config.FileName)
@@ -68,7 +78,8 @@ func main() {
 	}
 	log.Printf("data directory: %s", cfg.Data)
 	log.Printf("UI assets: %s", source)
-	log.Printf("client allowlist: %s", strings.Join(cfg.Allow, ", "))
+	log.Printf("edit clients: %s", joinOrNone(cfg.Edit))
+	log.Printf("view clients: %s (plus edit)", joinOrNone(cfg.View))
 
 	// An address that cannot be bound (say, the LAN interface is down) is
 	// logged and skipped so loopback keeps working; no listeners is fatal.
@@ -107,6 +118,13 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+func joinOrNone(list []string) string {
+	if len(list) == 0 {
+		return "(none)"
+	}
+	return strings.Join(list, ", ")
 }
 
 // Prefer ./web on disk when present so UI edits show without a rebuild.

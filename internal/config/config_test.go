@@ -21,9 +21,11 @@ func TestLoadFile(t *testing.T) {
 listen:
   - 127.0.0.1:8787
   - 10.1.32.219:8787
-allow:
+edit:
   - 127.0.0.1
   - 10.1.32.0/24
+view:
+  - 192.168.1.0/24
 data: bm-data
 `)
 	cfg, err := Load(p)
@@ -36,11 +38,15 @@ data: bm-data
 	if want := filepath.Join(filepath.Dir(p), "bm-data"); cfg.Data != want {
 		t.Fatalf("data %q, want %q (relative to config file)", cfg.Data, want)
 	}
-	nets, err := cfg.AllowedNets()
+	edit, err := cfg.EditNets()
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := func(s string) bool {
+	view, err := cfg.ViewNets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := func(nets []netip.Prefix, s string) bool {
 		ip := netip.MustParseAddr(s)
 		for _, n := range nets {
 			if n.Contains(ip) {
@@ -49,10 +55,11 @@ data: bm-data
 		}
 		return false
 	}
-	for ip, want := range map[string]bool{"127.0.0.1": true, "10.1.32.200": true, "10.1.33.1": false, "127.0.0.2": false} {
-		if in(ip) != want {
-			t.Errorf("%s allowed=%v, want %v", ip, !want, want)
-		}
+	if !in(edit, "127.0.0.1") || !in(edit, "10.1.32.200") || in(edit, "10.1.33.1") {
+		t.Fatalf("edit nets unexpected: %v", edit)
+	}
+	if !in(view, "192.168.1.5") || in(view, "10.1.32.1") {
+		t.Fatalf("view nets unexpected: %v", view)
 	}
 }
 
@@ -64,8 +71,11 @@ func TestDefaultsWhenKeysMissing(t *testing.T) {
 	if len(cfg.Listen) != 1 || cfg.Listen[0] != "127.0.0.1:8787" {
 		t.Fatalf("listen default %v", cfg.Listen)
 	}
-	if len(cfg.Allow) != 2 {
-		t.Fatalf("allow default %v", cfg.Allow)
+	if len(cfg.Edit) != 2 {
+		t.Fatalf("edit default %v", cfg.Edit)
+	}
+	if len(cfg.View) != 0 {
+		t.Fatalf("view default %v", cfg.View)
 	}
 	if _, err := Load(write(t, "")); err != nil {
 		t.Fatalf("empty file: %v", err)
@@ -77,15 +87,26 @@ func TestDefaultsWhenKeysMissing(t *testing.T) {
 
 func TestInvalidConfigRejected(t *testing.T) {
 	for name, body := range map[string]string{
-		"bad cidr":    "allow: [10.1.32.0/99]\n",
-		"bad ip":      "allow: [not-an-ip]\n",
-		"empty allow": "allow: []\n",
-		"no port":     "listen: [127.0.0.1]\n",
-		"typo key":    "listn: [127.0.0.1:8787]\n",
+		"bad cidr":         "edit: [10.1.32.0/99]\n",
+		"bad ip":           "edit: [not-an-ip]\n",
+		"empty edit+view":  "edit: []\nview: []\n",
+		"legacy allow key": "allow: [127.0.0.1]\n",
+		"no port":          "listen: [127.0.0.1]\n",
+		"typo key":         "listn: [127.0.0.1:8787]\n",
 	} {
 		if _, err := Load(write(t, body)); err == nil {
 			t.Errorf("%s: expected error", name)
 		}
+	}
+}
+
+func TestViewOnlyAllowed(t *testing.T) {
+	cfg, err := Load(write(t, "edit: []\nview: [10.1.32.0/24]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Edit) != 0 || len(cfg.View) != 1 {
+		t.Fatalf("edit=%v view=%v", cfg.Edit, cfg.View)
 	}
 }
 

@@ -19,8 +19,8 @@ var loopback = []netip.Prefix{
 	netip.MustParsePrefix("::1/128"),
 }
 
-// guard applies the client allowlist, Host check, and cross-site write
-// protection to every request before routing.
+// guard applies the client allowlist, Host check, edit-vs-view write gate,
+// and cross-site write protection before routing.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.clientAllowed(r.RemoteAddr) {
@@ -37,6 +37,17 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Content-Security-Policy", contentSecurityPolicy)
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
+		mutating := r.URL.Path == "/add" ||
+			(r.Method != http.MethodGet && r.Method != http.MethodHead)
+		if mutating && !s.clientCanEdit(r.RemoteAddr) {
+			if r.URL.Path == "/add" {
+				http.Error(w, "view-only client cannot add bookmarks", http.StatusForbidden)
+			} else {
+				writeJSONError(w, "view-only client cannot modify bookmarks", http.StatusForbidden)
+			}
+			return
+		}
 
 		if r.URL.Path == "/add" {
 			// The bookmarklet navigates the tab here. Refuse subresource loads
@@ -75,22 +86,47 @@ func checkSameOriginJSON(r *http.Request) (int, string) {
 	return 0, ""
 }
 
-func (s *Server) clientAllowed(remoteAddr string) bool {
+func (s *Server) clientIP(remoteAddr string) (netip.Addr, bool) {
 	ap, err := netip.ParseAddrPort(remoteAddr)
 	if err != nil {
-		return false
+		return netip.Addr{}, false
 	}
-	ip := ap.Addr().Unmap().WithZone("")
-	nets := s.Allow
-	if len(nets) == 0 {
-		nets = loopback
-	}
+	return ap.Addr().Unmap().WithZone(""), true
+}
+
+func ipIn(nets []netip.Prefix, ip netip.Addr) bool {
 	for _, p := range nets {
 		if p.Contains(ip) {
 			return true
 		}
 	}
 	return false
+}
+
+func (s *Server) clientAllowed(remoteAddr string) bool {
+	ip, ok := s.clientIP(remoteAddr)
+	if !ok {
+		return false
+	}
+	if ipIn(s.Edit, ip) || ipIn(s.View, ip) {
+		return true
+	}
+	// Empty lists with no config wired: loopback only (tests that set neither).
+	if len(s.Edit) == 0 && len(s.View) == 0 {
+		return ipIn(loopback, ip)
+	}
+	return false
+}
+
+func (s *Server) clientCanEdit(remoteAddr string) bool {
+	ip, ok := s.clientIP(remoteAddr)
+	if !ok {
+		return false
+	}
+	if len(s.Edit) == 0 && len(s.View) == 0 {
+		return ipIn(loopback, ip)
+	}
+	return ipIn(s.Edit, ip)
 }
 
 // hostAllowed accepts IP literals, localhost, and configured names. Anything

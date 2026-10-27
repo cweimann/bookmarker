@@ -21,7 +21,7 @@ func newTestServer(t *testing.T) (http.Handler, *store.Store) {
 	}
 	srv := &Server{
 		Store: st,
-		Allow: []netip.Prefix{
+		Edit: []netip.Prefix{
 			netip.MustParsePrefix("127.0.0.1/32"),
 			netip.MustParsePrefix("10.1.32.0/24"),
 		},
@@ -30,11 +30,29 @@ func newTestServer(t *testing.T) (http.Handler, *store.Store) {
 	return srv.Handler(), st
 }
 
+func newViewOnlyServer(t *testing.T) http.Handler {
+	t.Helper()
+	st, err := store.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{
+		Store: st,
+		Edit: []netip.Prefix{
+			netip.MustParsePrefix("127.0.0.1/32"),
+		},
+		View: []netip.Prefix{
+			netip.MustParsePrefix("10.1.32.0/24"),
+		},
+	}
+	return srv.Handler()
+}
+
 func do(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
-	if r.RemoteAddr == "192.0.2.1:1234" {
+	if r.RemoteAddr == "" || r.RemoteAddr == "192.0.2.1:1234" {
 		r.RemoteAddr = "127.0.0.1:5555"
 	}
-	if r.Host == "example.com" {
+	if r.Host == "" || r.Host == "example.com" {
 		r.Host = "127.0.0.1:8787"
 	}
 	rr := httptest.NewRecorder()
@@ -108,6 +126,46 @@ func TestClientAllowlist(t *testing.T) {
 		if rr := do(h, r); rr.Code != want {
 			t.Errorf("%s: %d, want %d", addr, rr.Code, want)
 		}
+	}
+}
+
+func TestViewOnlyCannotMutate(t *testing.T) {
+	h := newViewOnlyServer(t)
+
+	getCfg := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	getCfg.RemoteAddr = "10.1.32.7:5000"
+	getCfg.Host = "10.1.32.219:8787"
+	rr := do(h, getCfg)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("view GET config: %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"canEdit":false`) {
+		t.Fatalf("canEdit for view client: %s", rr.Body)
+	}
+
+	r := post("/api/bookmarks/create", `{"path":"","category":"inbox","title":"x","url":"https://x.example"}`, "application/json")
+	r.RemoteAddr = "10.1.32.7:5000"
+	r.Host = "10.1.32.219:8787"
+	r.Header.Set("Origin", "http://10.1.32.219:8787")
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	if rr := do(h, r); rr.Code != http.StatusForbidden {
+		t.Fatalf("view POST create: %d %s", rr.Code, rr.Body)
+	}
+
+	add := httptest.NewRequest(http.MethodGet, "/add?url=https%3A%2F%2Fx.example&noredirect=1", nil)
+	add.RemoteAddr = "10.1.32.7:5000"
+	add.Host = "10.1.32.219:8787"
+	add.Header.Set("Sec-Fetch-Dest", "document")
+	if rr := do(h, add); rr.Code != http.StatusForbidden {
+		t.Fatalf("view /add: %d", rr.Code)
+	}
+
+	editCfg := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	editCfg.RemoteAddr = "127.0.0.1:5000"
+	editCfg.Host = "127.0.0.1:8787"
+	rr = do(h, editCfg)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"canEdit":true`) {
+		t.Fatalf("canEdit for editor: %d %s", rr.Code, rr.Body)
 	}
 }
 

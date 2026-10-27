@@ -1,0 +1,25 @@
+# Copy to bookmarker.yaml (next to bookmarker.exe, or in the directory you
+# start it from) and adjust. Keys you leave out keep the built-in defaults:
+#   listen: [127.0.0.1:8787]
+#   allow:  [127.0.0.1, ::1]
+#   data:   data
+
+# Addresses to listen on, one listener each. Use explicit interface addresses;
+# 0.0.0.0:8787 (all interfaces) works only if you list it. An address that
+# can't be bound is logged and skipped as long as at least one listener starts.
+listen:
+  - 127.0.0.1:8787
+  - 10.1.32.219:8787
+
+# Client IPs or CIDR ranges allowed to connect. Everyone else gets 403.
+allow:
+  - 127.0.0.1
+  - 10.1.32.0/24
+
+# Extra DNS names accepted in the Host header. IP literals and localhost are
+# always accepted; any other name is refused to block DNS rebinding.
+# hosts:
+#   - bookmarks.example.lan
+
+# Bookmark directory. Relative paths resolve against this file's directory.
+data: data

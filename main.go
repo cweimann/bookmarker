@@ -2,13 +2,18 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"flag"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"github.com/cweimann/bookmarker/internal/config"
 	"github.com/cweimann/bookmarker/internal/server"
 	"github.com/cweimann/bookmarker/internal/store"
 )
@@ -17,32 +22,91 @@ import (
 var webFS embed.FS
 
 func main() {
-	addr := flag.String("addr", envOr("BOOKMARKER_ADDR", "0.0.0.0:8787"), "listen address (host:port); 0.0.0.0 allows LAN access")
-	dataDir := flag.String("data", envOr("BOOKMARKER_DATA", "data"), "directory for Markdown bookmark files")
+	configPath := flag.String("config", os.Getenv("BOOKMARKER_CONFIG"), "config file (default: ./"+config.FileName+", then next to the executable)")
+	addr := flag.String("addr", os.Getenv("BOOKMARKER_ADDR"), "comma-separated listen addresses; overrides the config file's listen list")
+	dataDir := flag.String("data", os.Getenv("BOOKMARKER_DATA"), "bookmark directory; overrides the config file's data")
 	flag.Parse()
 
-	absData, err := filepath.Abs(*dataDir)
+	path, err := config.Find(*configPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if *addr != "" {
+		cfg.Listen = splitList(*addr)
+	}
+	if *dataDir != "" {
+		if cfg.Data, err = filepath.Abs(*dataDir); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatal(err)
+	}
+	allow, err := cfg.AllowedNets()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	st, err := store.New(absData)
+	st, err := store.New(cfg.Data)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	static, source, err := loadStatic()
 	if err != nil {
 		log.Fatal(err)
 	}
+	handler := (&server.Server{Store: st, Static: static, Allow: allow, Hosts: cfg.Hosts}).Handler()
 
-	srv := &server.Server{Store: st, Static: static}
-	log.Printf("bookmarker listening on http://%s", *addr)
-	log.Printf("data directory: %s", absData)
+	if path == "" {
+		log.Printf("config: none found, using defaults (%s)", config.FileName)
+	} else {
+		log.Printf("config: %s", path)
+	}
+	log.Printf("data directory: %s", cfg.Data)
 	log.Printf("UI assets: %s", source)
-	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
+	log.Printf("client allowlist: %s", strings.Join(cfg.Allow, ", "))
+
+	// An address that cannot be bound (say, the LAN interface is down) is
+	// logged and skipped so loopback keeps working; no listeners is fatal.
+	errs := make(chan error, len(cfg.Listen))
+	bound := 0
+	for _, a := range cfg.Listen {
+		ln, err := net.Listen("tcp", a)
+		if err != nil {
+			log.Printf("listen %s: %v (skipped)", a, err)
+			continue
+		}
+		bound++
+		log.Printf("bookmarker listening on http://%s", ln.Addr())
+		srv := &http.Server{
+			Handler:           handler,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+		}
+		go func() { errs <- srv.Serve(ln) }()
+	}
+	if bound == 0 {
+		log.Fatal("no listen address could be bound")
+	}
+	if err := <-errs; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Prefer ./web on disk when present so UI edits show without a rebuild.
@@ -56,11 +120,4 @@ func loadStatic() (fs.FS, string, error) {
 		return nil, "", err
 	}
 	return sub, "embedded", nil
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

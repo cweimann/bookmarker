@@ -2,10 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io/fs"
+	"log"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/cweimann/bookmarker/internal/store"
@@ -15,6 +18,10 @@ import (
 type Server struct {
 	Store  *store.Store
 	Static fs.FS
+	// Allow lists client networks; empty means loopback only.
+	Allow []netip.Prefix
+	// Hosts are Host-header names accepted besides IP literals and localhost.
+	Hosts []string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -35,9 +42,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/move", s.handleMove)
 	mux.HandleFunc("/api/config", s.handleConfig)
 	if s.Static != nil {
-		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(s.Static))))
+		files := http.StripPrefix("/static/", http.FileServer(http.FS(s.Static)))
+		mux.Handle("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/") {
+				http.NotFound(w, r)
+				return
+			}
+			files.ServeHTTP(w, r)
+		}))
 	}
-	return mux
+	return s.guard(mux)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -59,8 +73,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	writeJSON(w, map[string]any{
@@ -80,11 +93,15 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 
 	b, err := s.Store.AddToRootInbox(title, url, source)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), statusFor(err))
 		return
 	}
-	if ref := r.Header.Get("Referer"); ref != "" && r.URL.Query().Get("noredirect") == "" {
-		http.Redirect(w, r, ref, http.StatusFound)
+	// Send the tab back to the page it saved. Referer is useless here: browsers
+	// trim it to the origin (or drop it) on cross-site navigations.
+	lower := strings.ToLower(b.URL)
+	if r.URL.Query().Get("noredirect") == "" &&
+		(strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")) {
+		http.Redirect(w, r, b.URL, http.StatusFound)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -107,151 +124,91 @@ a{color:#0b57d0}
 }
 
 func (s *Server) handleListing(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	listing, err := s.Store.List(r.URL.Query().Get("path"))
 	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, listing)
 }
 
 func (s *Server) handleFolders(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		ParentPath string `json:"parentPath"`
 		Title      string `json:"title"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	f, err := s.Store.CreateFolder(body.ParentPath, body.Title)
-	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, f)
+	respond(w)(s.Store.CreateFolder(body.ParentPath, body.Title))
 }
 
 func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		Path  string `json:"path"`
 		Title string `json:"title"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	f, err := s.Store.RenameFolder(body.Path, body.Title)
-	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, f)
+	respond(w)(s.Store.RenameFolder(body.Path, body.Title))
 }
 
 func (s *Server) handleFolderDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	if err := s.Store.DeleteFolder(body.Path); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]string{"ok": "true"})
+	respondOK(w, s.Store.DeleteFolder(body.Path))
 }
 
 func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		Path  string `json:"path"`
 		Title string `json:"title"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	cat, err := s.Store.CreateCategory(body.Path, body.Title)
-	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, cat)
+	respond(w)(s.Store.CreateCategory(body.Path, body.Title))
 }
 
 func (s *Server) handleCategoryMove(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		Slug     string `json:"slug"`
 		FromPath string `json:"fromPath"`
 		ToPath   string `json:"toPath"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	if err := s.Store.MoveCategory(body.Slug, body.FromPath, body.ToPath); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]string{"ok": "true"})
+	respondOK(w, s.Store.MoveCategory(body.Slug, body.FromPath, body.ToPath))
 }
 
 func (s *Server) handleCategoryRename(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		Path  string `json:"path"`
 		Slug  string `json:"slug"`
 		Title string `json:"title"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	cat, err := s.Store.RenameCategory(body.Path, body.Slug, body.Title)
-	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, cat)
+	respond(w)(s.Store.RenameCategory(body.Path, body.Slug, body.Title))
 }
 
 func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	list, err := s.Store.ListBookmarks(r.URL.Query().Get("path"), r.URL.Query().Get("category"))
 	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+		writeErr(w, err)
 		return
 	}
 	if list == nil {
@@ -261,10 +218,6 @@ func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBookmarkCreate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		Path     string `json:"path"`
 		Category string `json:"category"`
@@ -272,26 +225,16 @@ func (s *Server) handleBookmarkCreate(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		Source   string `json:"source"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
 	if body.Source == "" {
 		body.Source = "manual"
 	}
-	b, err := s.Store.AddBookmark(body.Path, body.Category, body.Title, body.URL, body.Source)
-	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, b)
+	respond(w)(s.Store.AddBookmark(body.Path, body.Category, body.Title, body.URL, body.Source))
 }
 
 func (s *Server) handleBookmarkUpdate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		ID       string `json:"id"`
 		Path     string `json:"path"`
@@ -299,23 +242,13 @@ func (s *Server) handleBookmarkUpdate(w http.ResponseWriter, r *http.Request) {
 		Title    string `json:"title"`
 		URL      string `json:"url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	b, err := s.Store.UpdateBookmark(body.Path, body.Category, body.ID, body.Title, body.URL)
-	if err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, b)
+	respond(w)(s.Store.UpdateBookmark(body.Path, body.Category, body.ID, body.Title, body.URL))
 }
 
 func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		ID           string `json:"id"`
 		FromPath     string `json:"fromPath"`
@@ -323,33 +256,57 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
 		ToPath       string `json:"toPath"`
 		ToCategory   string `json:"toCategory"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	if err := s.Store.MoveBookmark(body.ID, body.FromPath, body.FromCategory, body.ToPath, body.ToCategory); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]string{"ok": "true"})
+	respondOK(w, s.Store.MoveBookmark(body.ID, body.FromPath, body.FromCategory, body.ToPath, body.ToCategory))
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var body struct {
 		ID       string `json:"id"`
 		Path     string `json:"path"`
 		Category string `json:"category"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	if !decodePost(w, r, &body) {
 		return
 	}
-	if err := s.Store.DeleteBookmark(body.ID, body.Path, body.Category); err != nil {
-		writeErr(w, err, http.StatusBadRequest)
+	respondOK(w, s.Store.DeleteBookmark(body.ID, body.Path, body.Category))
+}
+
+func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
+	if r.Method != method {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+func decodePost(w http.ResponseWriter, r *http.Request, v any) bool {
+	if !requireMethod(w, r, http.MethodPost) {
+		return false
+	}
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeJSONError(w, "bad request body: "+err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// respond(w)(store.Op(...)) writes the result as JSON or maps the error.
+func respond(w http.ResponseWriter) func(any, error) {
+	return func(v any, err error) {
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, v)
+	}
+}
+
+func respondOK(w http.ResponseWriter, err error) {
+	if err != nil {
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, map[string]string{"ok": "true"})
@@ -364,13 +321,38 @@ func first(vals ...string) string {
 	return ""
 }
 
+func statusFor(err error) int {
+	switch {
+	case errors.Is(err, store.ErrInvalid):
+		return http.StatusBadRequest
+	case errors.Is(err, store.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, store.ErrExists):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeErr(w http.ResponseWriter, err error, code int) {
+// writeErr maps store errors to status codes. Unexpected errors are logged
+// and reported generically, since OS errors carry absolute paths.
+func writeErr(w http.ResponseWriter, err error) {
+	code := statusFor(err)
+	msg := err.Error()
+	if code == http.StatusInternalServerError {
+		log.Printf("internal error: %v", err)
+		msg = "internal error (see server log)"
+	}
+	writeJSONError(w, msg, code)
+}
+
+func writeJSONError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

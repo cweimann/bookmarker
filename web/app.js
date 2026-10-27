@@ -70,6 +70,42 @@
     return btn;
   }
 
+  function deleteXBtn(ariaLabel, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "delete-x";
+    btn.setAttribute("aria-label", ariaLabel);
+    btn.title = ariaLabel;
+    btn.textContent = "×";
+    btn.addEventListener("mousedown", (e) => e.stopPropagation());
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick(e);
+    });
+    return btn;
+  }
+
+  function navigateToFolderPath(folderPath) {
+    const path = folderPath || "";
+    columnPaths = [""];
+    selectedFolderInCol = [];
+    if (!path) {
+      view = { path: "", slug: "inbox", title: "Inbox" };
+      return;
+    }
+    const parts = path.split("/");
+    let acc = "";
+    for (let i = 0; i < parts.length; i++) {
+      selectedFolderInCol[i] = parts[i];
+      acc = acc ? acc + "/" + parts[i] : parts[i];
+      if (columnPaths.length < maxColumns) {
+        columnPaths.push(acc);
+      }
+    }
+    view = { path, slug: "inbox", title: "Inbox" };
+  }
+
   function setEditMode(on) {
     editMode = !!on;
     document.body.classList.toggle("edit-mode", editMode);
@@ -230,6 +266,37 @@
     }
   }
 
+  async function deleteFolder(path, title) {
+    if (!path) {
+      alert("Root cannot be deleted.");
+      return;
+    }
+    const label = title || path;
+    if (
+      !confirm(
+        'Delete folder "' +
+          label +
+          '"? Its categories, nested folders, and inbox bookmarks will move up one level (same names merge).'
+      )
+    ) {
+      return;
+    }
+    try {
+      await api("/api/folders/delete", {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      });
+      const parent = path.includes("/")
+        ? path.slice(0, path.lastIndexOf("/"))
+        : "";
+      navigateToFolderPath(parent);
+      await refreshVisible();
+      await loadBookmarks();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   async function renameCategory(path, slug, currentTitle) {
     if (slug === "inbox") {
       alert("Inbox cannot be renamed.");
@@ -321,9 +388,17 @@
       h2.textContent = listing.title || "Folder";
       header.appendChild(h2);
       if (path) {
-        header.appendChild(
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.alignItems = "center";
+        actions.style.gap = "0.15rem";
+        actions.appendChild(
           pencilBtn("Rename folder", () => renameFolder(path, listing.title))
         );
+        actions.appendChild(
+          deleteXBtn("Delete folder", () => deleteFolder(path, listing.title))
+        );
+        header.appendChild(actions);
         header.style.display = "flex";
         header.style.alignItems = "center";
         header.style.justifyContent = "space-between";
@@ -399,6 +474,9 @@
       row.appendChild(btn);
       row.appendChild(
         pencilBtn("Rename folder", () => renameFolder(f.path, f.title))
+      );
+      row.appendChild(
+        deleteXBtn("Delete folder", () => deleteFolder(f.path, f.title))
       );
       nav.appendChild(row);
     });

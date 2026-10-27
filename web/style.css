@@ -373,7 +373,7 @@ body.edit-mode .edit-pencil {
   text-overflow: ellipsis;
 }
 
-.bookmark .delete-x {
+.delete-x {
   display: none;
   flex-shrink: 0;
   appearance: none;
@@ -390,11 +390,11 @@ body.edit-mode .edit-pencil {
   border-radius: 0.25rem;
 }
 
-.bookmark .delete-x:hover {
+.delete-x:hover {
   background: #fee2e2;
 }
 
-body.edit-mode .bookmark .delete-x {
+body.edit-mode .delete-x {
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -24,6 +24,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/listing", s.handleListing)
 	mux.HandleFunc("/api/folders", s.handleFolders)
 	mux.HandleFunc("/api/folders/rename", s.handleFolderRename)
+	mux.HandleFunc("/api/folders/delete", s.handleFolderDelete)
 	mux.HandleFunc("/api/categories", s.handleCategories)
 	mux.HandleFunc("/api/categories/move", s.handleCategoryMove)
 	mux.HandleFunc("/api/categories/rename", s.handleCategoryRename)
@@ -157,6 +158,25 @@ func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, f)
+}
+
+func (s *Server) handleFolderDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	if err := s.Store.DeleteFolder(body.Path); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"ok": "true"})
 }
 
 func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {

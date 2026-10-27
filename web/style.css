@@ -181,11 +181,22 @@ body {
 .bookmark {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.45rem 0.7rem;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem 0.45rem 0.55rem;
   border-bottom: 1px solid var(--line);
+  border-left: 3px solid #a8a29e;
   cursor: grab;
   min-height: 2.1rem;
+  background: transparent;
+}
+
+.bookmark.proto-http,
+.bookmark.proto-https {
+  border-left-color: #a8a29e; /* cool gray */
+}
+
+.bookmark.proto-ssh {
+  border-left-color: #5f9ea0; /* muted teal */
 }
 
 .bookmark:last-child {
@@ -198,6 +209,20 @@ body {
 
 .bookmark:active {
   cursor: grabbing;
+}
+
+.bookmark .proto-glyph {
+  flex-shrink: 0;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: #5f9ea0;
+  opacity: 0.9;
+}
+
+.bookmark .proto-glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .bookmark .title {

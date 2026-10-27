@@ -31,6 +31,28 @@
     }
   }
 
+  function protocolOf(url) {
+    try {
+      return (new URL(url).protocol || "").replace(/:$/, "").toLowerCase();
+    } catch {
+      const m = String(url || "").match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+      return m ? m[1].toLowerCase() : "";
+    }
+  }
+
+  function sshGlyph() {
+    const span = document.createElement("span");
+    span.className = "proto-glyph";
+    span.setAttribute("aria-hidden", "true");
+    span.title = "SSH";
+    // Simple key icon
+    span.innerHTML =
+      '<svg viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M8.5 2a3.5 3.5 0 0 0-1.37 6.72L3 12.85V14h1.5l.5-.5.5.5H7v-1.5l.5-.5.5.5H9v-1.15l1.78-1.78A3.5 3.5 0 1 0 8.5 2Zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/>' +
+      "</svg>";
+    return span;
+  }
+
   function setEditMode(on) {
     editMode = !!on;
     document.body.classList.toggle("edit-mode", editMode);
@@ -97,10 +119,16 @@
     bookmarkList.innerHTML = "";
     empty.classList.toggle("hidden", items.length > 0);
     items.forEach((b) => {
+      const proto = protocolOf(b.url);
       const li = document.createElement("li");
-      li.className = "bookmark";
+      li.className = "bookmark proto-" + (proto || "other");
       li.draggable = true;
       li.dataset.id = b.id;
+      li.dataset.proto = proto;
+
+      if (proto === "ssh") {
+        li.appendChild(sshGlyph());
+      }
 
       const link = document.createElement("a");
       link.className = "title";

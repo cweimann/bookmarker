@@ -7,154 +7,213 @@ import (
 	"strings"
 )
 
-// Legacy flat layout → folder mapping (category slug → folder slug + title).
-var legacyCategoryFolders = map[string]string{
-	// Work
-	"webapp-dev":       "work",
-	"k12usa-dev":       "work",
-	"k12usa-staging":   "work",
-	"k12usa-live":      "work",
-	"secureschool-dev": "work",
-	"staff":            "work",
-	// Home / infrastructure
-	"homedev":    "home",
-	"vm-home":    "home",
-	"vm-servers": "home",
-	"entertainment": "home",
-	// Languages & tools
-	"go":         "languages",
-	"python":     "languages",
-	"postgres":   "languages",
-	"github-dev": "languages",
-	// Systems
-	"freebsd":            "systems",
-	"linux":              "systems",
-	"zfs-storage":        "systems",
-	"networking":         "systems",
-	"email":              "systems",
-	"security":           "systems",
-	"microsoft-windows":  "systems",
-	// Media & reading
-	"reading":     "media",
-	"comics-fun":  "media",
-	"media-video": "media",
-	"reddit":      "media",
-	"wikipedia":   "media",
-	// News
-	"news":          "news",
-	"news-politics": "news",
-	// Personal
-	"firearms":     "personal",
-	"shopping":     "personal",
-	"ships-marine": "personal",
-	"tech":         "personal",
-}
-
-var folderTitles = map[string]string{
-	"work":      "Work",
-	"home":      "Home",
-	"languages": "Languages",
-	"systems":   "Systems",
-	"media":     "Media",
-	"news":      "News",
-	"personal":  "Personal",
-	"unfiled":   "Unfiled",
-}
-
-// migrateLegacyIfNeeded moves data/inbox.md + data/categories/*.md into folders/.
-// Runs once when folders/ is empty (or missing migrated marker) but legacy paths exist.
+// migrateLegacyIfNeeded converts:
+//  1. data/folders/<name>/...  → data/<name>/...  (tree root = data/)
+//  2. unfiled/inbox.md         → data/inbox.md (merge)
+//  3. unfiled categories        → data/<cat>.md
+//
+// Also handles older flat data/categories/ if somehow still present.
 func (s *Store) migrateLegacyIfNeeded() error {
-	foldersRoot := s.foldersRoot()
-	legacyCats := filepath.Join(s.DataDir, "categories")
-	legacyInbox := filepath.Join(s.DataDir, "inbox.md")
-	marker := filepath.Join(s.DataDir, ".migrated-to-folders")
-
+	marker := filepath.Join(s.DataDir, ".migrated-to-tree")
 	if _, err := os.Stat(marker); err == nil {
 		return nil
 	}
 
+	legacyFolders := filepath.Join(s.DataDir, "folders")
+	legacyCats := filepath.Join(s.DataDir, "categories")
+	legacyInbox := filepath.Join(s.DataDir, "inbox.md")
+
 	hasLegacy := false
-	if _, err := os.Stat(legacyInbox); err == nil {
+	if st, err := os.Stat(legacyFolders); err == nil && st.IsDir() {
 		hasLegacy = true
 	}
 	if entries, err := os.ReadDir(legacyCats); err == nil && len(entries) > 0 {
 		hasLegacy = true
 	}
+	// Flat inbox without folders/ tree already is new layout if no folders/ dir.
 	if !hasLegacy {
+		// Ensure root meta exists for fresh installs; marker not needed.
 		return nil
 	}
 
-	// If folders already have content beyond empty unfiled, skip auto-move.
-	if entries, err := os.ReadDir(foldersRoot); err == nil {
+	if err := s.ensureFolderPath(""); err != nil {
+		return err
+	}
+
+	// Promote each data/folders/<slug> → data/<slug>
+	if entries, err := os.ReadDir(legacyFolders); err == nil {
 		for _, e := range entries {
-			if e.IsDir() {
-				// Already have folders — only migrate if this looks fresh
-				sub, _ := os.ReadDir(filepath.Join(foldersRoot, e.Name()))
-				for _, f := range sub {
-					name := f.Name()
-					if strings.HasSuffix(name, ".md") && name != "inbox.md" && name != "_folder.md" {
-						// Real categories already present; write marker and stop.
-						return atomicWrite(marker, "skipped: folders already populated\n")
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			src := filepath.Join(legacyFolders, name)
+			if name == "unfiled" {
+				if err := s.promoteUnfiled(src); err != nil {
+					return err
+				}
+				_ = os.RemoveAll(src)
+				continue
+			}
+			dst := filepath.Join(s.DataDir, name)
+			if _, err := os.Stat(dst); err == nil {
+				if err := s.mergeDirInto(src, dst); err != nil {
+					return fmt.Errorf("merge %s: %w", name, err)
+				}
+				_ = os.RemoveAll(src)
+			} else {
+				if err := os.Rename(src, dst); err != nil {
+					if err := s.copyDir(src, dst); err != nil {
+						return err
 					}
+					_ = os.RemoveAll(src)
 				}
 			}
 		}
+		_ = os.RemoveAll(legacyFolders)
 	}
 
-	for slug, title := range folderTitles {
-		if err := s.ensureFolder(slug, title); err != nil {
-			return err
-		}
-	}
-
-	// Move root inbox → unfiled/inbox.md (merge if both exist).
-	if _, err := os.Stat(legacyInbox); err == nil {
-		if err := s.mergeFileInto(legacyInbox, s.listPath("unfiled", "inbox"), "Inbox"); err != nil {
-			return fmt.Errorf("migrate inbox: %w", err)
-		}
-		_ = os.Remove(legacyInbox)
-	}
-
+	// Old flat categories → root
 	if entries, err := os.ReadDir(legacyCats); err == nil {
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 				continue
 			}
-			catSlug := strings.TrimSuffix(e.Name(), ".md")
-			folder := legacyCategoryFolders[catSlug]
-			if folder == "" {
-				folder = "unfiled"
-			}
-			if err := s.ensureFolder(folder, folderTitles[folder]); err != nil {
-				return err
-			}
 			src := filepath.Join(legacyCats, e.Name())
-			dst := s.listPath(folder, catSlug)
+			dst := filepath.Join(s.DataDir, e.Name())
 			if _, err := os.Stat(dst); err == nil {
-				// Merge into existing
 				if err := s.mergeFileInto(src, dst, ""); err != nil {
 					return err
 				}
 				_ = os.Remove(src)
 			} else {
-				if err := os.Rename(src, dst); err != nil {
-					// Cross-device fallback: copy
-					data, rerr := os.ReadFile(src)
-					if rerr != nil {
-						return rerr
-					}
-					if err := atomicWrite(dst, string(data)); err != nil {
-						return err
-					}
-					_ = os.Remove(src)
-				}
+				_ = os.Rename(src, dst)
 			}
 		}
-		// Remove empty legacy categories dir if possible
 		_ = os.Remove(legacyCats)
 	}
 
-	return atomicWrite(marker, "migrated from flat categories/\n")
+	// Stray legacy root inbox already at data/inbox.md is fine.
+	_ = legacyInbox
+
+	return atomicWrite(marker, "migrated to tree layout (data/ is root)\n")
+}
+
+func (s *Store) promoteUnfiled(src string) error {
+	// Merge unfiled/inbox.md → root inbox.md
+	srcInbox := filepath.Join(src, "inbox.md")
+	if _, err := os.Stat(srcInbox); err == nil {
+		if err := s.mergeFileInto(srcInbox, s.listPath("", "inbox"), "Inbox"); err != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			// Nested under unfiled → lift to root with same name
+			childSrc := filepath.Join(src, name)
+			dst := filepath.Join(s.DataDir, name)
+			if _, err := os.Stat(dst); err == nil {
+				if err := s.mergeDirInto(childSrc, dst); err != nil {
+					return err
+				}
+			} else if err := os.Rename(childSrc, dst); err != nil {
+				if err := s.copyDir(childSrc, dst); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if name == "inbox.md" || name == "_folder.md" {
+			continue
+		}
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		srcFile := filepath.Join(src, name)
+		dstFile := filepath.Join(s.DataDir, name)
+		if _, err := os.Stat(dstFile); err == nil {
+			if err := s.mergeFileInto(srcFile, dstFile, ""); err != nil {
+				return err
+			}
+		} else {
+			_ = os.Rename(srcFile, dstFile)
+		}
+	}
+	return nil
+}
+
+func (s *Store) mergeDirInto(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		sp := filepath.Join(src, e.Name())
+		dp := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := s.mergeDirInto(sp, dp); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := os.Stat(dp); err == nil {
+			if e.Name() == "_folder.md" {
+				continue // keep destination title
+			}
+			title := ""
+			if e.Name() == "inbox.md" {
+				title = "Inbox"
+			}
+			if err := s.mergeFileInto(sp, dp, title); err != nil {
+				return err
+			}
+		} else {
+			data, err := os.ReadFile(sp)
+			if err != nil {
+				return err
+			}
+			if err := atomicWrite(dp, string(data)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) copyDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		sp := filepath.Join(src, e.Name())
+		dp := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := s.copyDir(sp, dp); err != nil {
+				return err
+			}
+			continue
+		}
+		data, err := os.ReadFile(sp)
+		if err != nil {
+			return err
+		}
+		if err := atomicWrite(dp, string(data)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) mergeFileInto(src, dst, titleOverride string) error {
@@ -173,7 +232,7 @@ func (s *Store) mergeFileInto(src, dst, titleOverride string) error {
 		} else if data, err := os.ReadFile(src); err == nil {
 			title = parseTitle(string(data), filepath.Base(src))
 		} else {
-			title = "Inbox"
+			title = "Category"
 		}
 	}
 	seen := map[string]bool{}

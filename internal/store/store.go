@@ -13,79 +13,74 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxColumns is the UI column cap (root + nested). Depth limit = MaxColumns-1.
+// Change this single value to allow deeper trees later.
+const MaxColumns = 3
+
 // Bookmark is one saved link.
 type Bookmark struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
 	URL    string `json:"url"`
 	Source string `json:"source"`
-	Saved  string `json:"saved"` // RFC3339
+	Saved  string `json:"saved"`
 }
 
-// Folder groups categories (and a per-folder inbox).
-type Folder struct {
+// FolderRef is a child folder under some path.
+type FolderRef struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
+	Path  string `json:"path"` // full path from root, e.g. "work/dev"
 }
 
-// Category sits inside a folder. Slug "inbox" is the folder inbox.
-type Category struct {
-	Folder string `json:"folder"`
-	Slug   string `json:"slug"`
-	Title  string `json:"title"`
-	Inbox  bool   `json:"inbox"`
+// CategoryRef is a category (or inbox) in a folder.
+type CategoryRef struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+	Inbox bool   `json:"inbox"`
 }
 
-// Store reads and writes Markdown bookmark files under DataDir.
+// Listing is the contents of one folder path.
+type Listing struct {
+	Path       string        `json:"path"`
+	Title      string        `json:"title"`
+	Depth      int           `json:"depth"`
+	Folders    []FolderRef   `json:"folders"`
+	Categories []CategoryRef `json:"categories"`
+}
+
+// Store reads/writes a tree of Markdown under DataDir.
 //
-//	data/folders/<folder>/_folder.md   # folder title
-//	data/folders/<folder>/inbox.md
-//	data/folders/<folder>/<category>.md
+//	data/
+//	  _folder.md          # root title
+//	  inbox.md            # root inbox (/add target)
+//	  some-category.md
+//	  work/
+//	    _folder.md
+//	    inbox.md
+//	    webapp-dev.md
+//	    nested/
+//	      ...
 type Store struct {
 	DataDir string
 	mu      sync.Mutex
 }
 
-// DefaultFolder / DefaultFolderTitle are permanent; bookmarklet /add lands here.
-// The folder and its Inbox cannot be renamed or deleted.
-const DefaultFolder = "unfiled"
-const DefaultFolderTitle = "Unfiled"
-
-// ProtectedFolder reports whether a folder slug is the permanent Unfiled folder.
-func ProtectedFolder(slug string) bool {
-	return strings.TrimSpace(slug) == DefaultFolder
-}
-
-// ProtectedCategory reports whether a category is a permanent Inbox (any folder).
-func ProtectedCategory(slug string) bool {
-	s := strings.TrimSpace(slug)
-	return s == "" || s == "inbox"
-}
-
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
-// New creates a Store, migrates legacy layout if needed, ensures defaults.
+// New creates a Store, migrates legacy layouts, ensures root inbox.
 func New(dataDir string) (*Store, error) {
 	s := &Store{DataDir: dataDir}
-	if err := os.MkdirAll(s.foldersRoot(), 0o755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, err
 	}
 	if err := s.migrateLegacyIfNeeded(); err != nil {
 		return nil, err
 	}
-	if err := s.ensureDefaults(); err != nil {
+	if err := s.ensureFolderPath(""); err != nil {
 		return nil, err
 	}
 	return s, nil
-}
-
-// ensureDefaults creates Unfiled + its Inbox if missing and restores the canonical title.
-func (s *Store) ensureDefaults() error {
-	if err := s.ensureFolder(DefaultFolder, DefaultFolderTitle); err != nil {
-		return err
-	}
-	// Keep display title locked even if _folder.md was edited by hand.
-	return atomicWrite(s.folderMetaPath(DefaultFolder), "# "+DefaultFolderTitle+"\n")
 }
 
 // Slugify turns a title into a filesystem-safe slug.
@@ -94,42 +89,93 @@ func Slugify(title string) string {
 	s = slugRe.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	if s == "" {
-		s = "category"
+		s = "item"
 	}
 	return s
 }
 
-func (s *Store) foldersRoot() string {
-	return filepath.Join(s.DataDir, "folders")
-}
-
-func (s *Store) folderDir(folder string) string {
-	return filepath.Join(s.foldersRoot(), folder)
-}
-
-func (s *Store) folderMetaPath(folder string) string {
-	return filepath.Join(s.folderDir(folder), "_folder.md")
-}
-
-func (s *Store) listPath(folder, category string) string {
-	if category == "" || category == "inbox" {
-		return filepath.Join(s.folderDir(folder), "inbox.md")
+func (s *Store) abs(rel string) string {
+	rel = cleanPath(rel)
+	if rel == "" {
+		return s.DataDir
 	}
-	return filepath.Join(s.folderDir(folder), category+".md")
+	return filepath.Join(s.DataDir, filepath.FromSlash(rel))
 }
 
-func (s *Store) ensureFolder(slug, title string) error {
-	dir := s.folderDir(slug)
+func cleanPath(p string) string {
+	p = strings.Trim(strings.ReplaceAll(p, "\\", "/"), "/")
+	if p == "." || p == "" {
+		return ""
+	}
+	parts := strings.Split(p, "/")
+	var out []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		if part == "_folder" || part == "inbox" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, "/")
+}
+
+func pathDepth(p string) int {
+	p = cleanPath(p)
+	if p == "" {
+		return 0
+	}
+	return strings.Count(p, "/") + 1
+}
+
+func joinPath(parent, slug string) string {
+	parent = cleanPath(parent)
+	slug = strings.Trim(slug, "/")
+	if parent == "" {
+		return slug
+	}
+	return parent + "/" + slug
+}
+
+func (s *Store) metaPath(folderPath string) string {
+	return filepath.Join(s.abs(folderPath), "_folder.md")
+}
+
+func (s *Store) listPath(folderPath, category string) string {
+	category = normalizeCat(category)
+	if category == "inbox" {
+		return filepath.Join(s.abs(folderPath), "inbox.md")
+	}
+	return filepath.Join(s.abs(folderPath), category+".md")
+}
+
+func normalizeCat(c string) string {
+	c = strings.TrimSpace(c)
+	if c == "" {
+		return "inbox"
+	}
+	return c
+}
+
+func (s *Store) ensureFolderPath(folderPath string) error {
+	folderPath = cleanPath(folderPath)
+	dir := s.abs(folderPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	meta := s.folderMetaPath(slug)
+	meta := s.metaPath(folderPath)
 	if _, err := os.Stat(meta); os.IsNotExist(err) {
+		title := "Root"
+		if folderPath != "" {
+			title = humanize(filepath.Base(filepath.FromSlash(folderPath)))
+		}
 		if err := atomicWrite(meta, "# "+title+"\n"); err != nil {
 			return err
 		}
 	}
-	inbox := s.listPath(slug, "inbox")
+	inbox := s.listPath(folderPath, "inbox")
 	if _, err := os.Stat(inbox); os.IsNotExist(err) {
 		if err := atomicWrite(inbox, "# Inbox\n\n"); err != nil {
 			return err
@@ -138,219 +184,209 @@ func (s *Store) ensureFolder(slug, title string) error {
 	return nil
 }
 
-// ListFolders returns all folders sorted by title.
-func (s *Store) ListFolders() ([]Folder, error) {
+func (s *Store) folderTitle(folderPath string) string {
+	data, err := os.ReadFile(s.metaPath(folderPath))
+	if err != nil {
+		if folderPath == "" {
+			return "Root"
+		}
+		return humanize(filepath.Base(filepath.FromSlash(folderPath)))
+	}
+	fallback := "Root"
+	if folderPath != "" {
+		fallback = humanize(filepath.Base(filepath.FromSlash(folderPath)))
+	}
+	return parseTitle(string(data), fallback)
+}
+
+// List returns folders + categories at path (Inbox first among categories).
+func (s *Store) List(folderPath string) (Listing, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.listFoldersUnlocked()
+	return s.listUnlocked(folderPath)
 }
 
-func (s *Store) listFoldersUnlocked() ([]Folder, error) {
-	entries, err := os.ReadDir(s.foldersRoot())
+func (s *Store) listUnlocked(folderPath string) (Listing, error) {
+	folderPath = cleanPath(folderPath)
+	if err := s.ensureFolderPath(folderPath); err != nil {
+		return Listing{}, err
+	}
+	dir := s.abs(folderPath)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
-	}
-	var out []Folder
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		slug := e.Name()
-		title := s.folderTitleUnlocked(slug)
-		out = append(out, Folder{Slug: slug, Title: title})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		// Permanent Unfiled first, then A–Z.
-		if out[i].Slug == DefaultFolder {
-			return true
-		}
-		if out[j].Slug == DefaultFolder {
-			return false
-		}
-		return strings.ToLower(out[i].Title) < strings.ToLower(out[j].Title)
-	})
-	return out, nil
-}
-
-func (s *Store) folderTitleUnlocked(slug string) string {
-	data, err := os.ReadFile(s.folderMetaPath(slug))
-	if err != nil {
-		return humanize(slug)
-	}
-	return parseTitle(string(data), humanize(slug))
-}
-
-// CreateFolder creates data/folders/<slug>/ with inbox.
-func (s *Store) CreateFolder(title string) (Folder, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return Folder{}, fmt.Errorf("title required")
-	}
-	slug := Slugify(title)
-	if ProtectedFolder(slug) {
-		return Folder{}, fmt.Errorf("%s is reserved", DefaultFolderTitle)
-	}
-	if _, err := os.Stat(s.folderDir(slug)); err == nil {
-		return Folder{}, fmt.Errorf("folder %q already exists", slug)
-	}
-	if err := s.ensureFolder(slug, title); err != nil {
-		return Folder{}, err
-	}
-	return Folder{Slug: slug, Title: title}, nil
-}
-
-// ListCategories returns inbox + categories for a folder.
-func (s *Store) ListCategories(folder string) ([]Category, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	folder = strings.TrimSpace(folder)
-	if folder == "" {
-		return nil, fmt.Errorf("folder required")
-	}
-	if _, err := os.Stat(s.folderDir(folder)); err != nil {
-		return nil, fmt.Errorf("folder not found: %s", folder)
+		return Listing{}, err
 	}
 
-	out := []Category{{
-		Folder: folder,
-		Slug:   "inbox",
-		Title:  "Inbox",
-		Inbox:  true,
-	}}
-
-	entries, err := os.ReadDir(s.folderDir(folder))
-	if err != nil {
-		return nil, err
+	out := Listing{
+		Path:  folderPath,
+		Title: s.folderTitle(folderPath),
+		Depth: pathDepth(folderPath),
+		Categories: []CategoryRef{{
+			Slug:  "inbox",
+			Title: "Inbox",
+			Inbox: true,
+		}},
 	}
-	var cats []Category
+
+	var folders []FolderRef
+	var cats []CategoryRef
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".md") {
+		if e.IsDir() {
+			if name == "" || strings.HasPrefix(name, ".") {
+				continue
+			}
+			childPath := joinPath(folderPath, name)
+			folders = append(folders, FolderRef{
+				Slug:  name,
+				Title: s.folderTitle(childPath),
+				Path:  childPath,
+			})
+			continue
+		}
+		if !strings.HasSuffix(name, ".md") {
 			continue
 		}
 		if name == "inbox.md" || name == "_folder.md" {
 			continue
 		}
 		slug := strings.TrimSuffix(name, ".md")
-		data, err := os.ReadFile(filepath.Join(s.folderDir(folder), name))
+		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
-			return nil, err
+			return Listing{}, err
 		}
-		cats = append(cats, Category{
-			Folder: folder,
-			Slug:   slug,
-			Title:  parseTitle(string(data), humanize(slug)),
-			Inbox:  false,
+		cats = append(cats, CategoryRef{
+			Slug:  slug,
+			Title: parseTitle(string(data), humanize(slug)),
+			Inbox: false,
 		})
 	}
+	sort.Slice(folders, func(i, j int) bool {
+		return strings.ToLower(folders[i].Title) < strings.ToLower(folders[j].Title)
+	})
 	sort.Slice(cats, func(i, j int) bool {
 		return strings.ToLower(cats[i].Title) < strings.ToLower(cats[j].Title)
 	})
-	return append(out, cats...), nil
+	out.Folders = folders
+	out.Categories = append(out.Categories, cats...)
+	return out, nil
 }
 
-// CreateCategory creates a category markdown file in a folder.
-func (s *Store) CreateCategory(folder, title string) (Category, error) {
+// CreateFolder creates a child folder under parentPath.
+func (s *Store) CreateFolder(parentPath, title string) (FolderRef, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	folder = strings.TrimSpace(folder)
+	parentPath = cleanPath(parentPath)
 	title = strings.TrimSpace(title)
-	if folder == "" {
-		return Category{}, fmt.Errorf("folder required")
-	}
 	if title == "" {
-		return Category{}, fmt.Errorf("title required")
+		return FolderRef{}, fmt.Errorf("title required")
 	}
-	if _, err := os.Stat(s.folderDir(folder)); err != nil {
-		return Category{}, fmt.Errorf("folder not found: %s", folder)
+	if pathDepth(parentPath) >= MaxColumns-1 {
+		return FolderRef{}, fmt.Errorf("maximum folder depth is %d", MaxColumns-1)
+	}
+	if err := s.ensureFolderPath(parentPath); err != nil {
+		return FolderRef{}, err
+	}
+	slug := Slugify(title)
+	child := joinPath(parentPath, slug)
+	if _, err := os.Stat(s.abs(child)); err == nil {
+		return FolderRef{}, fmt.Errorf("folder %q already exists", slug)
+	}
+	if err := s.ensureFolderPath(child); err != nil {
+		return FolderRef{}, err
+	}
+	if err := atomicWrite(s.metaPath(child), "# "+title+"\n"); err != nil {
+		return FolderRef{}, err
+	}
+	return FolderRef{Slug: slug, Title: title, Path: child}, nil
+}
+
+// CreateCategory creates a category .md in folderPath.
+func (s *Store) CreateCategory(folderPath, title string) (CategoryRef, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	folderPath = cleanPath(folderPath)
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return CategoryRef{}, fmt.Errorf("title required")
+	}
+	if err := s.ensureFolderPath(folderPath); err != nil {
+		return CategoryRef{}, err
 	}
 	slug := Slugify(title)
 	if slug == "inbox" || slug == "_folder" {
-		return Category{}, fmt.Errorf("reserved name")
+		return CategoryRef{}, fmt.Errorf("reserved name")
 	}
-	path := s.listPath(folder, slug)
+	path := s.listPath(folderPath, slug)
 	if _, err := os.Stat(path); err == nil {
-		return Category{}, fmt.Errorf("category %q already exists", slug)
+		return CategoryRef{}, fmt.Errorf("category %q already exists", slug)
 	}
 	if err := atomicWrite(path, fmt.Sprintf("# %s\n\n", title)); err != nil {
-		return Category{}, err
+		return CategoryRef{}, err
 	}
-	return Category{Folder: folder, Slug: slug, Title: title, Inbox: false}, nil
+	return CategoryRef{Slug: slug, Title: title, Inbox: false}, nil
 }
 
-// MoveCategory relocates a category file between folders (not inbox).
-// Idempotent: if the file is already only in toFolder, returns nil.
-func (s *Store) MoveCategory(slug, fromFolder, toFolder string) error {
+// MoveCategory moves a category file between folder paths.
+func (s *Store) MoveCategory(slug, fromPath, toPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	slug = strings.TrimSpace(slug)
-	fromFolder = strings.TrimSpace(fromFolder)
-	toFolder = strings.TrimSpace(toFolder)
+	fromPath = cleanPath(fromPath)
+	toPath = cleanPath(toPath)
 	if slug == "" || slug == "inbox" {
 		return fmt.Errorf("cannot move inbox")
 	}
-	if fromFolder == "" || toFolder == "" {
-		return fmt.Errorf("from and to folder required")
-	}
-	if fromFolder == toFolder {
+	if fromPath == toPath {
 		return nil
 	}
-	if _, err := os.Stat(s.folderDir(toFolder)); err != nil {
-		return fmt.Errorf("folder not found: %s", toFolder)
+	if err := s.ensureFolderPath(toPath); err != nil {
+		return err
 	}
-	src := s.listPath(fromFolder, slug)
-	dst := s.listPath(toFolder, slug)
+	src := s.listPath(fromPath, slug)
+	dst := s.listPath(toPath, slug)
 	_, srcErr := os.Stat(src)
 	_, dstErr := os.Stat(dst)
 	if srcErr != nil && dstErr == nil {
-		// Already moved (e.g. duplicate drop event).
-		return nil
+		return nil // already moved
 	}
 	if srcErr != nil {
-		return fmt.Errorf("category not found: %s/%s", fromFolder, slug)
+		return fmt.Errorf("category not found: %s/%s", fromPath, slug)
 	}
 	if dstErr == nil {
-		return fmt.Errorf("category %q already exists in %s", slug, toFolder)
+		return fmt.Errorf("category %q already exists in %s", slug, toPath)
 	}
 	return os.Rename(src, dst)
 }
 
-// ListBookmarks returns bookmarks for folder + category (category "inbox" or "").
-func (s *Store) ListBookmarks(folder, category string) ([]Bookmark, error) {
+// ListBookmarks returns bookmarks for path + category.
+func (s *Store) ListBookmarks(folderPath, category string) ([]Bookmark, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	path, _, err := s.resolve(folder, category)
+	path, _, err := s.resolve(folderPath, category)
 	if err != nil {
 		return nil, err
 	}
 	return parseBookmarksFile(path)
 }
 
-// AddToInbox appends to the default folder inbox (bookmarklet target).
-func (s *Store) AddToInbox(title, url, source string) (Bookmark, error) {
-	return s.AddToFolderInbox(DefaultFolder, title, url, source)
+// AddToRootInbox is the bookmarklet target.
+func (s *Store) AddToRootInbox(title, url, source string) (Bookmark, error) {
+	return s.AddToFolderInbox("", title, url, source)
 }
 
 // AddToFolderInbox appends a bookmark to a folder's inbox.
-func (s *Store) AddToFolderInbox(folder, title, url, source string) (Bookmark, error) {
+func (s *Store) AddToFolderInbox(folderPath, title, url, source string) (Bookmark, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	folder = strings.TrimSpace(folder)
-	if folder == "" {
-		folder = DefaultFolder
-	}
-	if err := s.ensureFolder(folder, humanize(folder)); err != nil {
+	folderPath = cleanPath(folderPath)
+	if err := s.ensureFolderPath(folderPath); err != nil {
 		return Bookmark{}, err
 	}
-
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	source = strings.TrimSpace(source)
@@ -370,7 +406,7 @@ func (s *Store) AddToFolderInbox(folder, title, url, source string) (Bookmark, e
 		Source: source,
 		Saved:  time.Now().UTC().Format(time.RFC3339),
 	}
-	path := s.listPath(folder, "inbox")
+	path := s.listPath(folderPath, "inbox")
 	existing, err := parseBookmarksFile(path)
 	if err != nil {
 		return Bookmark{}, err
@@ -382,40 +418,37 @@ func (s *Store) AddToFolderInbox(folder, title, url, source string) (Bookmark, e
 	return b, nil
 }
 
-// MoveBookmark moves a bookmark between folder/category locations.
-func (s *Store) MoveBookmark(id, fromFolder, fromCat, toFolder, toCat string) error {
+// MoveBookmark moves a bookmark between path/category locations.
+func (s *Store) MoveBookmark(id, fromPath, fromCat, toPath, toCat string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if id == "" {
 		return fmt.Errorf("id required")
 	}
-	fromFolder = strings.TrimSpace(fromFolder)
-	toFolder = strings.TrimSpace(toFolder)
+	fromPath = cleanPath(fromPath)
+	toPath = cleanPath(toPath)
 	fromCat = normalizeCat(fromCat)
 	toCat = normalizeCat(toCat)
-	if fromFolder == toFolder && fromCat == toCat {
+	if fromPath == toPath && fromCat == toCat {
 		return nil
 	}
-
-	fromPath, fromTitle, err := s.resolve(fromFolder, fromCat)
+	fromFile, fromTitle, err := s.resolve(fromPath, fromCat)
 	if err != nil {
 		return err
 	}
-	toPath, toTitle, err := s.resolve(toFolder, toCat)
+	toFile, toTitle, err := s.resolve(toPath, toCat)
 	if err != nil {
 		return err
 	}
-
-	fromList, err := parseBookmarksFile(fromPath)
+	fromList, err := parseBookmarksFile(fromFile)
 	if err != nil {
 		return err
 	}
-	toList, err := parseBookmarksFile(toPath)
+	toList, err := parseBookmarksFile(toFile)
 	if err != nil {
 		return err
 	}
-
 	var moved *Bookmark
 	var remaining []Bookmark
 	for _, b := range fromList {
@@ -430,19 +463,18 @@ func (s *Store) MoveBookmark(id, fromFolder, fromCat, toFolder, toCat string) er
 		return fmt.Errorf("bookmark not found: %s", id)
 	}
 	toList = append(toList, *moved)
-
-	if err := writeBookmarksFile(fromPath, fromTitle, remaining); err != nil {
+	if err := writeBookmarksFile(fromFile, fromTitle, remaining); err != nil {
 		return err
 	}
-	return writeBookmarksFile(toPath, toTitle, toList)
+	return writeBookmarksFile(toFile, toTitle, toList)
 }
 
 // DeleteBookmark removes a bookmark by ID.
-func (s *Store) DeleteBookmark(id, folder, category string) error {
+func (s *Store) DeleteBookmark(id, folderPath, category string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	path, title, err := s.resolve(folder, category)
+	path, title, err := s.resolve(folderPath, category)
 	if err != nil {
 		return err
 	}
@@ -465,27 +497,20 @@ func (s *Store) DeleteBookmark(id, folder, category string) error {
 	return writeBookmarksFile(path, title, remaining)
 }
 
-func normalizeCat(c string) string {
-	c = strings.TrimSpace(c)
-	if c == "" {
-		return "inbox"
-	}
-	return c
-}
-
-func (s *Store) resolve(folder, category string) (path, title string, err error) {
-	folder = strings.TrimSpace(folder)
+func (s *Store) resolve(folderPath, category string) (path, title string, err error) {
+	folderPath = cleanPath(folderPath)
 	category = normalizeCat(category)
-	if folder == "" {
-		return "", "", fmt.Errorf("folder required")
+	if err := s.ensureFolderPath(folderPath); err != nil {
+		return "", "", err
 	}
-	if _, err := os.Stat(s.folderDir(folder)); err != nil {
-		return "", "", fmt.Errorf("folder not found: %s", folder)
-	}
-	path = s.listPath(folder, category)
+	path = s.listPath(folderPath, category)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", "", fmt.Errorf("category not found: %s/%s", folder, category)
+		loc := category
+		if folderPath != "" {
+			loc = folderPath + "/" + category
+		}
+		return "", "", fmt.Errorf("category not found: %s", loc)
 	}
 	fallback := "Inbox"
 	if category != "inbox" {
@@ -533,7 +558,6 @@ func parseBookmarks(content string) []Bookmark {
 	lines := strings.Split(content, "\n")
 	var out []Bookmark
 	var cur *Bookmark
-
 	flush := func() {
 		if cur != nil && cur.URL != "" {
 			if cur.ID == "" {
@@ -546,7 +570,6 @@ func parseBookmarks(content string) []Bookmark {
 		}
 		cur = nil
 	}
-
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if strings.HasPrefix(line, "## ") {

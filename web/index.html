@@ -8,41 +8,14 @@
 </head>
 <body>
   <div class="app">
-    <aside class="col folders-col">
-      <header class="brand">
-        <h1>Bookmarker</h1>
-      </header>
-      <nav class="nav" id="folder-list"></nav>
-      <form id="new-folder" class="new-item">
-        <label for="folder-title">New folder</label>
-        <div class="row">
-          <input id="folder-title" name="title" type="text" placeholder="Name" required autocomplete="off">
-          <button type="submit">Add</button>
-        </div>
-      </form>
-    </aside>
-
-    <aside class="col categories-col">
-      <header class="col-header">
-        <h2 id="folder-heading">Categories</h2>
-      </header>
-      <nav class="nav" id="category-list"></nav>
-      <form id="new-category" class="new-item">
-        <label for="category-title">New category</label>
-        <div class="row">
-          <input id="category-title" name="title" type="text" placeholder="Name" required autocomplete="off">
-          <button type="submit">Add</button>
-        </div>
-      </form>
-    </aside>
-
+    <div class="nav-columns" id="nav-columns"></div>
     <main class="main">
       <header class="main-header">
         <div class="main-header-row">
           <h2 id="list-title">Inbox</h2>
           <button type="button" id="edit-toggle" class="edit-toggle" aria-pressed="false">Edit</button>
         </div>
-        <p class="hint">Drag bookmarks onto a category; drag a category onto a folder to refile it.</p>
+        <p class="hint">Drag bookmarks onto a category or folder; drag a category onto a folder to refile it.</p>
       </header>
       <div class="bookmark-scroll">
         <ul id="bookmark-list" class="bookmarks"></ul>

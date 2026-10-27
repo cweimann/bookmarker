@@ -89,6 +89,15 @@ Fields: `id` (UUID), `url`, `source`, `saved` (RFC3339 UTC). Writes are atomic (
 | POST | `/api/move` | `{ "id", "from", "to" }` |
 | POST | `/api/bookmarks/delete` | `{ "id", "category" }` |
 
+
+## Import from Homepage
+
+`scripts/import_homepage.py` reads `GET /api/bookmarks` from a Homepage instance (default `http://podman.local.weimann.us:3000`), maps each group to a category, and merges by URL (keeps ssh/http/https).
+
+```powershell
+python scripts\import_homepage.py
+```
+
 ## Import from old CGI
 
 `scripts/import_showlinks.py` fetches http://www.weimann.us/showlinks.cgi (or uses cached `old-cgi.html`), categorizes by URL/title heuristics, and merges into `data/` without deleting local bookmarks (sources not starting with `showlinks:`). Re-run refreshes the imported set:
@@ -103,4 +112,5 @@ python scripts\import_showlinks.py --refetch
 - Push this repo to GitHub when Christopher asks
 - Further categorize the large inbox with agent help
 - Optional Chrome extension (bookmarklet is enough for now)
+
 

@@ -4,3 +4,6 @@
 data/
 .tmp-*
 old-cgi.html
+homepage-bookmarks.json
+homepage-probe/
+

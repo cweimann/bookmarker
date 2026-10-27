@@ -16,11 +16,14 @@
   /** listings cache by path */
   let listings = {};
   let editMode = false;
+  /** bumps on every loadBookmarks so stale responses are dropped */
+  let bookmarkSeq = 0;
+  const blockedSchemes = new Set(["javascript", "vbscript", "data", "blob"]);
 
   async function api(path, opts) {
     const res = await fetch(path, {
-      headers: { "Content-Type": "application/json", ...(opts && opts.headers) },
       ...opts,
+      headers: { "Content-Type": "application/json", ...(opts && opts.headers) },
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -260,6 +263,10 @@
       } else if (path && view.path.startsWith(path + "/")) {
         view.path = updated.path + view.path.slice(path.length);
       }
+      for (let i = 1; i < columnPaths.length; i++) {
+        const p = columnPaths[i];
+        selectedFolderInCol[i - 1] = p.slice(p.lastIndexOf("/") + 1);
+      }
       await refreshVisible();
       updateListTitle();
     } catch (err) {
@@ -323,7 +330,7 @@
     }
   }
 
-  async function renameBookmark(b) {
+  async function renameBookmark(b, at) {
     const title = prompt("Bookmark title:", b.title || "");
     if (title === null) return;
     const url = prompt("Bookmark URL:", b.url || "");
@@ -337,8 +344,8 @@
         method: "POST",
         body: JSON.stringify({
           id: b.id,
-          path: view.path,
-          category: view.slug,
+          path: at.path,
+          category: at.slug,
           title: newTitle || b.title,
           url: newURL || b.url,
         }),
@@ -349,10 +356,14 @@
     }
   }
 
+  function showError(err) {
+    alert(err.message || String(err));
+  }
+
   function selectCategory(path, slug, title) {
     view = { path, slug, title };
     renderAllColumns();
-    loadBookmarks();
+    loadBookmarks().catch(showError);
   }
 
   function selectFolder(colIndex, folder) {
@@ -366,7 +377,9 @@
     }
     // Default view: that folder's inbox
     view = { path: folder.path, slug: "inbox", title: "Inbox" };
-    refreshVisible().then(() => loadBookmarks());
+    refreshVisible()
+      .then(() => loadBookmarks())
+      .catch(showError);
   }
 
   function renderColumn(colIndex, path) {
@@ -501,8 +514,9 @@
       "</div>";
     add.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const title = add.title.value.trim();
-      const kind = add.kind.value;
+      const titleInput = add.elements.namedItem("title");
+      const title = titleInput.value.trim();
+      const kind = add.elements.namedItem("kind").value;
       if (!title) return;
       try {
         if (kind === "folder") {
@@ -510,7 +524,7 @@
             method: "POST",
             body: JSON.stringify({ parentPath: path || "", title }),
           });
-          add.title.value = "";
+          titleInput.value = "";
           await refreshVisible();
           selectFolder(colIndex, f);
         } else {
@@ -518,7 +532,7 @@
             method: "POST",
             body: JSON.stringify({ path: path || "", title }),
           });
-          add.title.value = "";
+          titleInput.value = "";
           await refreshVisible();
           selectCategory(path || "", c.slug, c.title);
         }
@@ -548,7 +562,8 @@
     renderAllColumns();
   }
 
-  function renderBookmarks(items) {
+  /** @param at { path, slug } the list these items were fetched from */
+  function renderBookmarks(items, at) {
     bookmarkList.innerHTML = "";
     empty.classList.toggle("hidden", items.length > 0);
     items.forEach((b) => {
@@ -566,7 +581,7 @@
 
       const link = document.createElement("a");
       link.className = "title";
-      link.href = b.url;
+      if (!blockedSchemes.has(proto)) link.href = b.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.textContent = b.title || b.url;
@@ -576,7 +591,7 @@
       host.className = "host";
       host.textContent = hostOf(b.url);
 
-      const rename = pencilBtn("Rename bookmark", () => renameBookmark(b));
+      const rename = pencilBtn("Rename bookmark", () => renameBookmark(b, at));
 
       const del = document.createElement("button");
       del.type = "button";
@@ -593,8 +608,8 @@
             method: "POST",
             body: JSON.stringify({
               id: b.id,
-              path: view.path,
-              category: view.slug,
+              path: at.path,
+              category: at.slug,
             }),
           });
           await loadBookmarks();
@@ -617,8 +632,8 @@
           return;
         }
         e.dataTransfer.setData("text/bookmark-id", b.id);
-        e.dataTransfer.setData("text/bookmark-path", view.path);
-        e.dataTransfer.setData("text/bookmark-category", view.slug);
+        e.dataTransfer.setData("text/bookmark-path", at.path);
+        e.dataTransfer.setData("text/bookmark-category", at.slug);
         e.dataTransfer.effectAllowed = "move";
       });
 
@@ -628,13 +643,16 @@
   }
 
   async function loadBookmarks() {
+    const seq = ++bookmarkSeq;
+    const at = { path: view.path || "", slug: view.slug || "inbox" };
     const items = await api(
       "/api/bookmarks?path=" +
-        encodeURIComponent(view.path || "") +
+        encodeURIComponent(at.path) +
         "&category=" +
-        encodeURIComponent(view.slug || "inbox")
+        encodeURIComponent(at.slug)
     );
-    renderBookmarks(items);
+    if (seq !== bookmarkSeq) return;
+    renderBookmarks(items, at);
   }
 
   async function createBookmark() {

@@ -142,6 +142,13 @@ def fetch_bookmarks(base: str) -> list[dict]:
 
 
 def main() -> int:
+    if (DATA / ".migrated-to-tree").exists():
+        print(
+            "data/ uses the folder-tree layout; this importer still writes the old "
+            "data/categories/ layout, which the server no longer reads. Update it first.",
+            file=sys.stderr,
+        )
+        return 2
     base = DEFAULT_BASE
     for i, a in enumerate(sys.argv[1:], 1):
         if a == "--base" and i < len(sys.argv) - 1:

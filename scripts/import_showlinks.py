@@ -412,6 +412,13 @@ def fetch(url: str) -> str:
 
 
 def main() -> int:
+    if (DATA / ".migrated-to-tree").exists():
+        print(
+            "data/ uses the folder-tree layout; this importer still writes the old "
+            "data/categories/ layout, which the server no longer reads. Update it first.",
+            file=sys.stderr,
+        )
+        return 2
     cache = ROOT / "old-cgi.html"
     if cache.exists() and "--refetch" not in sys.argv:
         html_text = cache.read_text(encoding="utf-8", errors="replace")

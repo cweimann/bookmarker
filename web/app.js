@@ -4,6 +4,7 @@
   const listTitle = document.getElementById("list-title");
   const empty = document.getElementById("empty");
   const editToggle = document.getElementById("edit-toggle");
+  const addBookmarkBtn = document.getElementById("add-bookmark");
 
   let maxColumns = 3;
   /** @type {string[]} path for each visible column; col0 always "" */
@@ -636,7 +637,37 @@
     renderBookmarks(items);
   }
 
+  async function createBookmark() {
+    const title = prompt("Bookmark title:");
+    if (title === null) return;
+    const url = prompt("Bookmark URL:");
+    if (url === null) return;
+    const trimmedURL = url.trim();
+    if (!trimmedURL) {
+      alert("URL is required.");
+      return;
+    }
+    const path = view.path || "";
+    const category = view.slug || "inbox";
+    try {
+      await api("/api/bookmarks/create", {
+        method: "POST",
+        body: JSON.stringify({
+          path,
+          category,
+          title: title.trim(),
+          url: trimmedURL,
+          source: "manual",
+        }),
+      });
+      await loadBookmarks();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   editToggle.addEventListener("click", () => setEditMode(!editMode));
+  addBookmarkBtn.addEventListener("click", () => createBookmark());
 
   (async () => {
     try {

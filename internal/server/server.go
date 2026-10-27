@@ -29,6 +29,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/categories/move", s.handleCategoryMove)
 	mux.HandleFunc("/api/categories/rename", s.handleCategoryRename)
 	mux.HandleFunc("/api/bookmarks", s.handleBookmarks)
+	mux.HandleFunc("/api/bookmarks/create", s.handleBookmarkCreate)
 	mux.HandleFunc("/api/bookmarks/update", s.handleBookmarkUpdate)
 	mux.HandleFunc("/api/bookmarks/delete", s.handleDelete)
 	mux.HandleFunc("/api/move", s.handleMove)
@@ -257,6 +258,33 @@ func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {
 		list = []store.Bookmark{}
 	}
 	writeJSON(w, list)
+}
+
+func (s *Server) handleBookmarkCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Path     string `json:"path"`
+		Category string `json:"category"`
+		Title    string `json:"title"`
+		URL      string `json:"url"`
+		Source   string `json:"source"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	if body.Source == "" {
+		body.Source = "manual"
+	}
+	b, err := s.Store.AddBookmark(body.Path, body.Category, body.Title, body.URL, body.Source)
+	if err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, b)
 }
 
 func (s *Server) handleBookmarkUpdate(w http.ResponseWriter, r *http.Request) {

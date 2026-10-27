@@ -375,18 +375,21 @@ func (s *Store) ListBookmarks(folderPath, category string) ([]Bookmark, error) {
 
 // AddToRootInbox is the bookmarklet target.
 func (s *Store) AddToRootInbox(title, url, source string) (Bookmark, error) {
-	return s.AddToFolderInbox("", title, url, source)
+	return s.AddBookmark("", "inbox", title, url, source)
 }
 
 // AddToFolderInbox appends a bookmark to a folder's inbox.
 func (s *Store) AddToFolderInbox(folderPath, title, url, source string) (Bookmark, error) {
+	return s.AddBookmark(folderPath, "inbox", title, url, source)
+}
+
+// AddBookmark appends a bookmark to path + category (defaults to root inbox).
+func (s *Store) AddBookmark(folderPath, category, title, url, source string) (Bookmark, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	folderPath = cleanPath(folderPath)
-	if err := s.ensureFolderPath(folderPath); err != nil {
-		return Bookmark{}, err
-	}
+	category = normalizeCat(category)
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	source = strings.TrimSpace(source)
@@ -399,6 +402,10 @@ func (s *Store) AddToFolderInbox(folderPath, title, url, source string) (Bookmar
 	if source == "" {
 		source = "manual"
 	}
+	path, fileTitle, err := s.resolve(folderPath, category)
+	if err != nil {
+		return Bookmark{}, err
+	}
 	b := Bookmark{
 		ID:     uuid.NewString(),
 		Title:  title,
@@ -406,13 +413,12 @@ func (s *Store) AddToFolderInbox(folderPath, title, url, source string) (Bookmar
 		Source: source,
 		Saved:  time.Now().UTC().Format(time.RFC3339),
 	}
-	path := s.listPath(folderPath, "inbox")
 	existing, err := parseBookmarksFile(path)
 	if err != nil {
 		return Bookmark{}, err
 	}
 	existing = append(existing, b)
-	if err := writeBookmarksFile(path, "Inbox", existing); err != nil {
+	if err := writeBookmarksFile(path, fileTitle, existing); err != nil {
 		return Bookmark{}, err
 	}
 	return b, nil

@@ -252,6 +252,14 @@ body.edit-mode .edit-pencil {
   letter-spacing: -0.02em;
 }
 
+.main-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.header-btn,
 .edit-toggle {
   appearance: none;
   border: 1px solid var(--line);
@@ -263,6 +271,7 @@ body.edit-mode .edit-pencil {
   cursor: pointer;
 }
 
+.header-btn:hover,
 .edit-toggle:hover {
   border-color: #cbd5e1;
   background: #f8fafc;

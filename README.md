@@ -21,7 +21,7 @@ Defaults:
 
 | Setting   | Flag / env              | Default           |
 |-----------|-------------------------|-------------------|
-| Listen    | `-addr` / `BOOKMARKER_ADDR` | `127.0.0.1:8787` |
+| Listen    | `-addr` / `BOOKMARKER_ADDR` | `0.0.0.0:8787` (all interfaces) |
 | Data dir  | `-data` / `BOOKMARKER_DATA` | `data` (relative to cwd) |
 
 Examples:
@@ -32,7 +32,7 @@ go build -o bookmarker.exe .
 .\bookmarker.exe
 ```
 
-Open http://127.0.0.1:8787/
+Open http://127.0.0.1:8787/ (this machine) or http://10.1.32.219:8787/ (LAN). Use `-addr 127.0.0.1:8787` if you want localhost-only again.
 
 If the page still shows the old multi-line layout with always-visible Delete, a stale `bookmarker.exe` is almost certainly still bound to port 8787. Run `restart.cmd` in this folder (or kill that process), then hard-refresh with Ctrl+F5. When `web/` exists next to the process working directory, the server serves those files from disk so UI tweaks do not require a rebuild.
 

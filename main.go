@@ -17,7 +17,7 @@ import (
 var webFS embed.FS
 
 func main() {
-	addr := flag.String("addr", envOr("BOOKMARKER_ADDR", "127.0.0.1:8787"), "listen address (host:port)")
+	addr := flag.String("addr", envOr("BOOKMARKER_ADDR", "0.0.0.0:8787"), "listen address (host:port); 0.0.0.0 allows LAN access")
 	dataDir := flag.String("data", envOr("BOOKMARKER_DATA", "data"), "directory for Markdown bookmark files")
 	flag.Parse()
 

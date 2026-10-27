@@ -184,7 +184,7 @@ body {
   gap: 0.5rem;
   padding: 0.45rem 0.7rem 0.45rem 0.55rem;
   border-bottom: 1px solid var(--line);
-  border-left: 3px solid #a8a29e;
+  border-left: 3px solid #c4c0ba;
   cursor: grab;
   min-height: 2.1rem;
   background: transparent;
@@ -192,11 +192,11 @@ body {
 
 .bookmark.proto-http,
 .bookmark.proto-https {
-  border-left-color: #a8a29e; /* cool gray */
+  border-left-color: #c4c0ba; /* quiet cool gray */
 }
 
 .bookmark.proto-ssh {
-  border-left-color: #5f9ea0; /* muted teal */
+  border-left-color: #0f766e; /* stronger teal/green */
 }
 
 .bookmark:last-child {
@@ -215,8 +215,8 @@ body {
   flex-shrink: 0;
   width: 0.95rem;
   height: 0.95rem;
-  color: #5f9ea0;
-  opacity: 0.9;
+  color: #0f766e;
+  opacity: 0.95;
 }
 
 .bookmark .proto-glyph svg {

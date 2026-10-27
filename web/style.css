@@ -149,12 +149,23 @@ body {
 }
 
 .main {
-  padding: 1.35rem 1.75rem 1.5rem;
+  padding: 1.35rem 1.75rem 0;
   min-width: 0;
   min-height: 0;
   height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-header {
+  flex-shrink: 0;
+  padding-bottom: 0.15rem;
+  background: var(--bg);
+  background:
+    radial-gradient(circle at 10% 0%, #dbeafe 0%, transparent 40%),
+    radial-gradient(circle at 90% 10%, #fde68a 0%, transparent 35%),
+    var(--bg);
 }
 
 .main-header-row {
@@ -163,6 +174,14 @@ body {
   justify-content: space-between;
   gap: 1rem;
   max-width: 48rem;
+}
+
+.bookmark-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 1.5rem;
 }
 
 .main-header h2 {
@@ -340,6 +359,10 @@ body.edit-mode .bookmark .delete-x {
 
   .main {
     height: auto;
+    overflow: visible;
+  }
+
+  .bookmark-scroll {
     overflow: visible;
   }
 

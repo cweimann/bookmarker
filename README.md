@@ -44,21 +44,35 @@ Create a bookmark whose URL is (adjust host/port if you changed `-addr`):
 javascript:(function(){var u=encodeURIComponent(location.href);var t=encodeURIComponent(document.title);location.href='http://127.0.0.1:8787/add?url='+u+'&title='+t+'&source=bookmarklet';})();
 ```
 
-`GET` or `POST` `/add?url=&title=&source=` appends to the inbox. With a `Referer` header it redirects back to the page you came from; otherwise it shows a short confirmation.
+`GET` or `POST` `/add?url=&title=&source=` appends to the **Unfiled** folder inbox (`?folder=` optional). With a `Referer` header it redirects back; otherwise it shows a short confirmation.
 
 ## Data layout
 
+Folders contain categories; each folder has its own inbox:
+
 ```
 data/
-  inbox.md                 # uncategorized saves
-  categories/
-    reading.md             # one file per category
-    tools.md
+  folders/
+    work/
+      _folder.md           # folder title
+      inbox.md             # that folder's inbox
+      webapp-dev.md
+      k12usa-live.md
+    languages/
+      _folder.md
+      inbox.md
+      go.md
+      python.md
+    unfiled/
+      _folder.md
+      inbox.md             # bookmarklet default target
 ```
+
+On first start, a one-time migration moves legacy `data/inbox.md` + `data/categories/*.md` into these folders (see `internal/store/migrate.go`).
 
 ### Entry format
 
-Each file starts with a `# Title` heading. Every bookmark is an `##` section:
+Each list file starts with a `# Title` heading. Every bookmark is an `##` section:
 
 ```markdown
 # Inbox
@@ -74,20 +88,24 @@ Fields: `id` (UUID), `url`, `source`, `saved` (RFC3339 UTC). Writes are atomic (
 
 ## UI
 
-- Left sidebar: **Inbox** plus categories
-- Drag a bookmark onto a category (or Inbox) to move it
-- **New category** creates `data/categories/<slug>.md`
+- Left column: **folders**
+- Middle: **categories** in the selected folder (including that folder’s Inbox)
+- Main: one-line bookmarks (ssh stripe/glyph, Edit delete, drag onto categories or folders)
+- Drag a category onto a folder to refile it
+- Create folder / create category in the current folder
 
 ## API (used by the UI)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET/POST | `/add` | Save to inbox (bookmarklet) |
-| GET | `/api/categories` | List categories |
-| POST | `/api/categories` | Create `{ "title": "..." }` |
-| GET | `/api/bookmarks?category=inbox\|slug` | List bookmarks |
-| POST | `/api/move` | `{ "id", "from", "to" }` |
-| POST | `/api/bookmarks/delete` | `{ "id", "category" }` |
+| GET/POST | `/add` | Save to Unfiled inbox (or `?folder=`) |
+| GET/POST | `/api/folders` | List / create folders |
+| GET | `/api/categories?folder=` | List categories (+ inbox) |
+| POST | `/api/categories` | Create `{ "folder", "title" }` |
+| POST | `/api/categories/move` | `{ "slug", "fromFolder", "toFolder" }` |
+| GET | `/api/bookmarks?folder=&category=` | List bookmarks |
+| POST | `/api/move` | Move bookmark between folder/category |
+| POST | `/api/bookmarks/delete` | `{ "id", "folder", "category" }` |
 
 
 ## Import from Homepage

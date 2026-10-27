@@ -21,7 +21,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/add", s.handleAdd)
+	mux.HandleFunc("/api/folders", s.handleFolders)
 	mux.HandleFunc("/api/categories", s.handleCategories)
+	mux.HandleFunc("/api/categories/move", s.handleCategoryMove)
 	mux.HandleFunc("/api/bookmarks", s.handleBookmarks)
 	mux.HandleFunc("/api/move", s.handleMove)
 	mux.HandleFunc("/api/bookmarks/delete", s.handleDelete)
@@ -58,14 +60,14 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	url := first(r.Form.Get("url"), r.URL.Query().Get("url"))
 	title := first(r.Form.Get("title"), r.URL.Query().Get("title"))
 	source := first(r.Form.Get("source"), r.URL.Query().Get("source"), "bookmarklet")
+	folder := first(r.Form.Get("folder"), r.URL.Query().Get("folder"), store.DefaultFolder)
 
-	b, err := s.Store.AddToInbox(title, url, source)
+	b, err := s.Store.AddToFolderInbox(folder, title, url, source)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Prefer redirect back to referer when present (bookmarklet flow).
 	if ref := r.Header.Get("Referer"); ref != "" && r.URL.Query().Get("noredirect") == "" {
 		http.Redirect(w, r, ref, http.StatusFound)
 		return
@@ -82,23 +84,24 @@ a{color:#0b57d0}
 <h1>Saved</h1>
 <p><strong>%s</strong></p>
 <p><a href="%s">%s</a></p>
-<p>Added to inbox. <a href="/">Open Bookmarker</a></p>
+<p>Added to %s inbox. <a href="/">Open Bookmarker</a></p>
 </body></html>`,
 		html.EscapeString(b.Title),
 		html.EscapeString(b.URL),
 		html.EscapeString(b.URL),
+		html.EscapeString(folder),
 	)
 }
 
-func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleFolders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		cats, err := s.Store.ListCategories()
+		folders, err := s.Store.ListFolders()
 		if err != nil {
 			writeErr(w, err, http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, cats)
+		writeJSON(w, folders)
 	case http.MethodPost:
 		var body struct {
 			Title string `json:"title"`
@@ -107,7 +110,37 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err, http.StatusBadRequest)
 			return
 		}
-		cat, err := s.Store.CreateCategory(body.Title)
+		f, err := s.Store.CreateFolder(body.Title)
+		if err != nil {
+			writeErr(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, f)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		folder := r.URL.Query().Get("folder")
+		cats, err := s.Store.ListCategories(folder)
+		if err != nil {
+			writeErr(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, cats)
+	case http.MethodPost:
+		var body struct {
+			Folder string `json:"folder"`
+			Title  string `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, err, http.StatusBadRequest)
+			return
+		}
+		cat, err := s.Store.CreateCategory(body.Folder, body.Title)
 		if err != nil {
 			writeErr(w, err, http.StatusBadRequest)
 			return
@@ -118,21 +151,35 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleCategoryMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Slug       string `json:"slug"`
+		FromFolder string `json:"fromFolder"`
+		ToFolder   string `json:"toFolder"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	if err := s.Store.MoveCategory(body.Slug, body.FromFolder, body.ToFolder); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"ok": "true"})
+}
+
 func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	slug := r.URL.Query().Get("category")
-	var (
-		list []store.Bookmark
-		err  error
-	)
-	if slug == "" || slug == "inbox" {
-		list, err = s.Store.ListInbox()
-	} else {
-		list, err = s.Store.ListCategory(slug)
-	}
+	folder := r.URL.Query().Get("folder")
+	category := r.URL.Query().Get("category")
+	list, err := s.Store.ListBookmarks(folder, category)
 	if err != nil {
 		writeErr(w, err, http.StatusBadRequest)
 		return
@@ -149,15 +196,30 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ID       string `json:"id"`
-		From     string `json:"from"`
-		To       string `json:"to"`
+		ID           string `json:"id"`
+		FromFolder   string `json:"fromFolder"`
+		FromCategory string `json:"fromCategory"`
+		ToFolder     string `json:"toFolder"`
+		ToCategory   string `json:"toCategory"`
+		// Back-compat aliases
+		From string `json:"from"`
+		To   string `json:"to"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, err, http.StatusBadRequest)
 		return
 	}
-	if err := s.Store.MoveBookmark(body.ID, normalizeSlug(body.From), normalizeSlug(body.To)); err != nil {
+	fromCat := first(body.FromCategory, body.From)
+	toCat := first(body.ToCategory, body.To)
+	fromFolder := body.FromFolder
+	toFolder := body.ToFolder
+	if fromFolder == "" {
+		fromFolder = store.DefaultFolder
+	}
+	if toFolder == "" {
+		toFolder = fromFolder
+	}
+	if err := s.Store.MoveBookmark(body.ID, fromFolder, fromCat, toFolder, toCat); err != nil {
 		writeErr(w, err, http.StatusBadRequest)
 		return
 	}
@@ -171,25 +233,22 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		ID       string `json:"id"`
+		Folder   string `json:"folder"`
 		Category string `json:"category"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, err, http.StatusBadRequest)
 		return
 	}
-	if err := s.Store.DeleteBookmark(body.ID, normalizeSlug(body.Category)); err != nil {
+	folder := body.Folder
+	if folder == "" {
+		folder = store.DefaultFolder
+	}
+	if err := s.Store.DeleteBookmark(body.ID, folder, body.Category); err != nil {
 		writeErr(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, map[string]string{"ok": "true"})
-}
-
-func normalizeSlug(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "inbox" {
-		return ""
-	}
-	return s
 }
 
 func first(vals ...string) string {

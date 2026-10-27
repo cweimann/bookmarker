@@ -480,7 +480,7 @@
       li.dataset.id = b.id;
 
       if (proto === "ssh") {
-        li.appendChild(protoGlyph("\u{1F5A5}", "SSH")); // 🖥
+        li.appendChild(protoGlyph("\u{1F5B5}", "SSH")); // 🖵
       } else if (proto === "http" || proto === "https") {
         li.appendChild(protoGlyph("\u{1F310}", "Web")); // 🌐
       }

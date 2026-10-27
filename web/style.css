@@ -80,36 +80,77 @@ body {
   flex-shrink: 0;
 }
 
-.nav-item {
-  appearance: none;
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
   border: 1px solid transparent;
-  background: transparent;
-  text-align: left;
-  padding: 0.5rem 0.6rem;
   border-radius: 0.35rem;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
 }
 
-.nav-item:hover {
+.nav-row:hover {
   background: #f5f0e8;
 }
 
-.nav-item.active {
+.nav-row.active {
   background: var(--accent-soft);
   border-color: #99f6e4;
-  color: #115e59;
-  font-weight: 600;
 }
 
-.nav-item.drop-target {
+.nav-row.drop-target {
   outline: 2px dashed var(--accent);
   background: var(--accent-soft);
 }
 
+.nav-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.5rem 0.55rem;
+  border-radius: 0.3rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-row.active .nav-item {
+  color: #115e59;
+  font-weight: 600;
+}
+
 .nav-item.inbox {
   font-style: italic;
+}
+
+.edit-pencil {
+  display: none;
+  flex-shrink: 0;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+
+.edit-pencil:hover {
+  background: #e7e5e4;
+  color: var(--ink);
+}
+
+body.edit-mode .edit-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .new-item label {
@@ -329,6 +370,10 @@ body.edit-mode .bookmark .delete-x {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.bookmark .edit-pencil {
+  color: var(--muted);
 }
 
 .empty {

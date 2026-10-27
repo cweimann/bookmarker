@@ -56,6 +56,22 @@
     return span;
   }
 
+  function pencilBtn(ariaLabel, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "edit-pencil";
+    btn.setAttribute("aria-label", ariaLabel);
+    btn.title = ariaLabel;
+    btn.textContent = "✎";
+    btn.addEventListener("mousedown", (e) => e.stopPropagation());
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick(e);
+    });
+    return btn;
+  }
+
   function setEditMode(on) {
     editMode = !!on;
     document.body.classList.toggle("edit-mode", editMode);
@@ -179,12 +195,90 @@
     });
   }
 
+  async function renameFolder(f) {
+    const title = prompt("Rename folder:", f.title);
+    if (title === null) return;
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === f.title) return;
+    try {
+      const updated = await api("/api/folders/rename", {
+        method: "POST",
+        body: JSON.stringify({ slug: f.slug, title: trimmed }),
+      });
+      if (currentFolder === f.slug) {
+        currentFolder = updated.slug;
+      }
+      await loadFolders();
+      renderFolders();
+      await loadCategories();
+      await loadBookmarks();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function renameCategory(c) {
+    if (c.inbox) return;
+    const title = prompt("Rename category:", c.title);
+    if (title === null) return;
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === c.title) return;
+    try {
+      const updated = await api("/api/categories/rename", {
+        method: "POST",
+        body: JSON.stringify({
+          folder: currentFolder,
+          slug: c.slug,
+          title: trimmed,
+        }),
+      });
+      if (currentCategory === c.slug) {
+        currentCategory = updated.slug;
+      }
+      await loadCategories();
+      await loadBookmarks();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function renameBookmark(b) {
+    const title = prompt("Bookmark title:", b.title || "");
+    if (title === null) return;
+    const url = prompt("Bookmark URL:", b.url || "");
+    if (url === null) return;
+    const newTitle = title.trim();
+    const newURL = url.trim();
+    if (!newTitle && !newURL) return;
+    if (newTitle === b.title && newURL === b.url) return;
+    try {
+      await api("/api/bookmarks/update", {
+        method: "POST",
+        body: JSON.stringify({
+          id: b.id,
+          folder: currentFolder,
+          category: currentCategory,
+          title: newTitle || b.title,
+          url: newURL || b.url,
+        }),
+      });
+      await loadBookmarks();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function renderFolders() {
     folderList.innerHTML = "";
     folders.forEach((f) => {
+      const row = document.createElement("div");
+      row.className =
+        "nav-row" + (currentFolder === f.slug ? " active" : "");
+      row.dataset.folder = f.slug;
+
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "nav-item" + (currentFolder === f.slug ? " active" : "");
+      btn.className = "nav-item";
       btn.dataset.folder = f.slug;
       btn.textContent = f.title;
       btn.addEventListener("click", async () => {
@@ -195,19 +289,29 @@
         await loadBookmarks();
       });
       wireFolderDrop(btn);
-      folderList.appendChild(btn);
+      wireFolderDrop(row);
+
+      row.appendChild(btn);
+      row.appendChild(
+        pencilBtn("Rename folder", () => renameFolder(f))
+      );
+      folderList.appendChild(row);
     });
   }
 
   function renderCategories() {
     categoryList.innerHTML = "";
     categories.forEach((c) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className =
-        "nav-item" +
+      const row = document.createElement("div");
+      row.className =
+        "nav-row" +
         (c.inbox ? " inbox" : "") +
         (currentCategory === c.slug ? " active" : "");
+      row.dataset.slug = c.slug;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "nav-item" + (c.inbox ? " inbox" : "");
       btn.dataset.slug = c.slug;
       btn.textContent = c.title;
       btn.draggable = !c.inbox;
@@ -224,7 +328,15 @@
         });
       }
       wireCategoryDrop(btn);
-      categoryList.appendChild(btn);
+      wireCategoryDrop(row);
+
+      row.appendChild(btn);
+      if (!c.inbox) {
+        row.appendChild(
+          pencilBtn("Rename category", () => renameCategory(c))
+        );
+      }
+      categoryList.appendChild(row);
     });
     updateListTitle();
   }
@@ -255,6 +367,8 @@
       host.className = "host";
       host.textContent = hostOf(b.url);
 
+      const rename = pencilBtn("Rename bookmark", () => renameBookmark(b));
+
       const del = document.createElement("button");
       del.type = "button";
       del.className = "delete-x";
@@ -282,10 +396,14 @@
 
       li.appendChild(link);
       li.appendChild(host);
+      li.appendChild(rename);
       li.appendChild(del);
 
       li.addEventListener("dragstart", (e) => {
-        if (e.target.closest && e.target.closest(".delete-x")) {
+        if (
+          e.target.closest &&
+          (e.target.closest(".delete-x") || e.target.closest(".edit-pencil"))
+        ) {
           e.preventDefault();
           return;
         }
@@ -305,6 +423,13 @@
     if (!currentFolder && folders.length) {
       const unfiled = folders.find((f) => f.slug === "unfiled");
       currentFolder = unfiled ? unfiled.slug : folders[0].slug;
+    } else if (
+      currentFolder &&
+      folders.length &&
+      !folders.some((f) => f.slug === currentFolder)
+    ) {
+      currentFolder = folders[0].slug;
+      currentCategory = "inbox";
     }
     renderFolders();
   }

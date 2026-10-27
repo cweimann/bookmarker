@@ -22,9 +22,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/add", s.handleAdd)
 	mux.HandleFunc("/api/folders", s.handleFolders)
+	mux.HandleFunc("/api/folders/rename", s.handleFolderRename)
 	mux.HandleFunc("/api/categories", s.handleCategories)
 	mux.HandleFunc("/api/categories/move", s.handleCategoryMove)
+	mux.HandleFunc("/api/categories/rename", s.handleCategoryRename)
 	mux.HandleFunc("/api/bookmarks", s.handleBookmarks)
+	mux.HandleFunc("/api/bookmarks/update", s.handleBookmarkUpdate)
 	mux.HandleFunc("/api/move", s.handleMove)
 	mux.HandleFunc("/api/bookmarks/delete", s.handleDelete)
 	if s.Static != nil {
@@ -121,6 +124,27 @@ func (s *Server) handleFolders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleFolderRename(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Slug  string `json:"slug"`
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	f, err := s.Store.RenameFolder(body.Slug, body.Title)
+	if err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, f)
+}
+
 func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -170,6 +194,56 @@ func (s *Server) handleCategoryMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"ok": "true"})
+}
+
+func (s *Server) handleCategoryRename(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Folder string `json:"folder"`
+		Slug   string `json:"slug"`
+		Title  string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	cat, err := s.Store.RenameCategory(body.Folder, body.Slug, body.Title)
+	if err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, cat)
+}
+
+func (s *Server) handleBookmarkUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID       string `json:"id"`
+		Folder   string `json:"folder"`
+		Category string `json:"category"`
+		Title    string `json:"title"`
+		URL      string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	folder := body.Folder
+	if folder == "" {
+		folder = store.DefaultFolder
+	}
+	b, err := s.Store.UpdateBookmark(folder, body.Category, body.ID, body.Title, body.URL)
+	if err != nil {
+		writeErr(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, b)
 }
 
 func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {

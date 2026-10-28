@@ -285,9 +285,14 @@ body.edit-mode .edit-pencil {
 }
 
 .hint {
+  display: none;
   margin: 0.35rem 0 1rem;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+body.edit-mode .hint {
+  display: block;
 }
 
 .bookmark-scroll {

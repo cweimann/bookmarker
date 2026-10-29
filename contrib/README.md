@@ -5,6 +5,7 @@ conventions — edit them to match the host.
 
 | Layout | Role |
 |--------|------|
+| [`windows/nssm.md`](windows/nssm.md) | Windows service via NSSM |
 | [`daemontools/run`](daemontools/run) + [`daemontools/log/run`](daemontools/log/run) | daemontools / runit-style `supervise` |
 | [`freebsd/rc.d/bookmarker`](freebsd/rc.d/bookmarker) | FreeBSD `/usr/local/etc/rc.d` |
 | [`systemd/bookmarker.service`](systemd/bookmarker.service) | Linux systemd (preferred on modern Linux) |
@@ -35,6 +36,10 @@ data: /var/db/bookmarker
 (or `/var/lib/bookmarker` on Linux).
 
 ## Enable
+
+### Windows (NSSM)
+
+See [`windows/nssm.md`](windows/nssm.md). Short version: install NSSM, point it at `bookmarker.exe` with `AppDirectory` set to the install folder and `AppParameters` `-config …\bookmarker.yaml`.
 
 ### daemontools
 

@@ -1,19 +1,17 @@
 ﻿# Bookmarker
 
-Local-first bookmark manager: a small Go HTTP server that stores bookmarks as Markdown files. Replaces the old weimann.us CGI list.
-
-No GitHub remote yet; push later when ready.
+Local-first bookmark manager: a small Go HTTP server that stores bookmarks as Markdown files.
 
 ## Requirements
 
 - Go 1.22+ (tested with Go 1.27 on Windows)
 
-On this machine Go lives at `C:\Program Files\Go\bin`. Add that to your PATH, or call `go` with the full path.
+On Windows, Go is often at `C:\Program Files\Go\bin`. Add that to your PATH, or call `go` with the full path.
 
 ## Run
 
 ```powershell
-cd C:\Users\cweim\dev\bookmarker
+cd path\to\bookmarker
 go run .
 ```
 
@@ -25,11 +23,14 @@ Example supervisors live under [`contrib/`](contrib/):
 
 | | Path in tree |
 |--|----------------|
+| Windows (NSSM) | [`contrib/windows/nssm.md`](contrib/windows/nssm.md) |
 | daemontools | [`contrib/daemontools/run`](contrib/daemontools/run) + [`log/run`](contrib/daemontools/log/run) |
 | FreeBSD rc.d | [`contrib/freebsd/rc.d/bookmarker`](contrib/freebsd/rc.d/bookmarker) → `/usr/local/etc/rc.d/bookmarker` |
 | Linux systemd | [`contrib/systemd/bookmarker.service`](contrib/systemd/bookmarker.service) (preferred on modern Linux) |
 
-Typical install: binary `/usr/local/bin/bookmarker`, user `bookmarker`, config `/usr/local/etc/bookmarker.yaml` (FreeBSD/daemontools) or `/etc/bookmarker/bookmarker.yaml` (systemd), data `/var/db/bookmarker` or `/var/lib/bookmarker` with an **absolute** `data:` in the yaml. Enable steps are in [`contrib/README.md`](contrib/README.md).
+On Windows, [NSSM](https://nssm.cc/) is the simplest documented approach: it runs `bookmarker.exe` with a fixed working directory and `-config`, captures logs, and restarts on failure. See [`contrib/windows/nssm.md`](contrib/windows/nssm.md).
+
+On Unix, typical install: binary `/usr/local/bin/bookmarker`, user `bookmarker`, config `/usr/local/etc/bookmarker.yaml` (FreeBSD/daemontools) or `/etc/bookmarker/bookmarker.yaml` (systemd), data `/var/db/bookmarker` or `/var/lib/bookmarker` with an **absolute** `data:` in the yaml. Enable steps are in [`contrib/README.md`](contrib/README.md).
 
 ## Configuration
 
@@ -39,7 +40,7 @@ Settings come from `bookmarker.yaml`. The server uses the first one it finds:
 2. `bookmarker.yaml` in the working directory
 3. `bookmarker.yaml` next to the executable
 
-With no file it falls back to the built-in defaults below (loopback editors only). `bookmarker.yaml` is gitignored; start from [`bookmarker.example.yaml`](bookmarker.example.yaml), which has this machine's values:
+With no file it falls back to the built-in defaults below (loopback editors only). `bookmarker.yaml` is gitignored; start from [`bookmarker.example.yaml`](bookmarker.example.yaml):
 
 ```yaml
 listen:
@@ -147,11 +148,10 @@ POSTs take JSON bodies and must send `Content-Type: application/json`. Errors ar
 
 ## Importers
 
-`scripts/import_homepage.py` (Homepage startpage) and `scripts/import_showlinks.py` (old CGI list) were written for the pre-tree `data/categories/` layout. They now refuse to run against the current tree and need updating before they are used again.
+`scripts/import_homepage.py` and `scripts/import_showlinks.py` were written for the pre-tree `data/categories/` layout. They now refuse to run against the current tree and need updating before they are used again.
 
 ## Later
 
-- Push this repo to GitHub when Christopher asks
 - Further categorize the large inbox with agent help
 - Optional Chrome extension (bookmarklet is enough for now)
 - Optional login if the allowlist ever needs to widen

@@ -148,6 +148,104 @@
     }
     parts.push(view.title || view.slug);
     listTitle.textContent = parts.join(" · ");
+    const atRootInbox = !view.path && (view.slug || "inbox") === "inbox";
+    document.title = atRootInbox
+      ? "Bookmarker"
+      : listTitle.textContent + " — Bookmarker";
+    writeHash();
+  }
+
+  // The open columns and the category on screen are independent.
+  // #open=development/libraries leaves the list on root inbox.
+  // #open=development/libraries&view=development/libraries/go selects Go there.
+  // #view=/go is the Go category at root, with only the root column open.
+  function openPath() {
+    const paths = columnPaths.filter(Boolean);
+    return paths.length ? paths[paths.length - 1] : "";
+  }
+
+  function parseHash(hash) {
+    let raw = String(hash || "");
+    if (raw.charAt(0) === "#") raw = raw.slice(1);
+    try {
+      raw = decodeURIComponent(raw.replace(/\+/g, "%2B"));
+    } catch (e) {
+      /* keep the raw fragment */
+    }
+    const place = { open: "", path: "", slug: "inbox" };
+    if (!raw) return place;
+    raw.split("&").forEach((pair) => {
+      const i = pair.indexOf("=");
+      if (i < 0) return;
+      const key = pair.slice(0, i);
+      const val = pair.slice(i + 1).replace(/^\/+|\/+$/g, "");
+      if (key === "open") {
+        place.open = val;
+        return;
+      }
+      if (key !== "view" || !val || val === "inbox") return;
+      const parts = val.split("/").filter(Boolean);
+      place.slug = parts[parts.length - 1];
+      place.path = parts.slice(0, -1).join("/");
+    });
+    return place;
+  }
+
+  function appPlace() {
+    return {
+      open: openPath(),
+      path: view.path || "",
+      slug: view.slug || "inbox",
+    };
+  }
+
+  function samePlace(a, b) {
+    return a.open === b.open && a.path === b.path && a.slug === b.slug;
+  }
+
+  function placeHash() {
+    const place = appPlace();
+    const parts = [];
+    if (place.open) parts.push("open=" + place.open);
+    if (place.path || place.slug !== "inbox") {
+      parts.push(
+        "view=" + (place.path ? place.path + "/" : "/") + place.slug
+      );
+    }
+    return parts.join("&");
+  }
+
+  function hashKey(hash) {
+    const place = parseHash(hash);
+    return place.open + "\n" + place.path + "\n" + place.slug;
+  }
+
+  function writeHash() {
+    if (samePlace(parseHash(location.hash), appPlace())) return;
+    const next = placeHash();
+    if (!next) {
+      history.pushState(null, "", location.pathname + location.search);
+      return;
+    }
+    location.hash = next;
+  }
+
+  async function showHashView() {
+    const requested = hashKey(location.hash);
+    const target = parseHash(location.hash);
+    if (target.open) await fetchListing(target.open);
+    const listing = await fetchListing(target.path);
+    if (hashKey(location.hash) !== requested) return;
+    const cat = (listing.categories || []).find((c) => c.slug === target.slug);
+    if (!cat) {
+      const where = target.path ? target.path + "/" : "/";
+      throw new Error("Unknown view " + where + target.slug);
+    }
+    navigateToFolderPath(target.open);
+    view = { path: target.path, slug: cat.slug, title: cat.title };
+    await refreshVisible();
+    if (hashKey(location.hash) !== requested) return;
+    await loadBookmarks();
   }
 
   function humanize(slug) {
@@ -723,6 +821,23 @@
   editToggle.addEventListener("click", () => setEditMode(!editMode));
   addBookmarkBtn.addEventListener("click", () => createBookmark());
 
+  function revertHash() {
+    const next = placeHash();
+    history.replaceState(
+      null,
+      "",
+      location.pathname + location.search + (next ? "#" + next : "")
+    );
+  }
+
+  window.addEventListener("hashchange", () => {
+    if (samePlace(parseHash(location.hash), appPlace())) return;
+    showHashView().catch((err) => {
+      alert(err.message || String(err));
+      revertHash();
+    });
+  });
+
   (async () => {
     try {
       const cfg = await api("/api/config");
@@ -730,8 +845,23 @@
       canEdit = cfg.canEdit !== false;
       applyCanEditUI();
       await fetchListing("");
-      renderAllColumns();
-      await loadBookmarks();
+      const incoming = parseHash(location.hash);
+      if (incoming.open || incoming.path || incoming.slug !== "inbox") {
+        try {
+          await showHashView();
+        } catch (err) {
+          alert(err.message || String(err));
+          view = { path: "", slug: "inbox", title: "Inbox" };
+          columnPaths = [""];
+          selectedFolderInCol = [];
+          history.replaceState(null, "", location.pathname + location.search);
+          renderAllColumns();
+          await loadBookmarks();
+        }
+      } else {
+        renderAllColumns();
+        await loadBookmarks();
+      }
     } catch (err) {
       alert("Failed to load: " + err.message);
     }

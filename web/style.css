@@ -104,8 +104,13 @@ body {
 }
 
 .nav-row.active {
-  background: var(--accent-soft);
-  border-color: #99f6e4;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.nav-row.active[data-slug] {
+  background: #ecfccb;
+  border-color: #bef264;
 }
 
 .nav-row.drop-target {
@@ -131,8 +136,12 @@ body {
 }
 
 .nav-row.active .nav-item {
-  color: #115e59;
+  color: #1e40af;
   font-weight: 600;
+}
+
+.nav-row.active[data-slug] .nav-item {
+  color: #3f6212;
 }
 
 .nav-item.inbox {

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Example daemontools service run script for Bookmarker.
+#
+# Install (example layout):
+#   /service/bookmarker/run          (this file, mode 755)
+#   /service/bookmarker/log/run
+#   /usr/local/bin/bookmarker        (built binary)
+#   /usr/local/etc/bookmarker.yaml   (from bookmarker.example.yaml)
+#   user/group: bookmarker
+#
+# In bookmarker.yaml use an absolute data path, e.g.:
+#   data: /var/db/bookmarker
+#
+# Enable: ln -s /path/to/service/bookmarker /service/bookmarker
+# (or copy into your scan directory). Supervise restarts on exit.
+#
+# Adjust paths and the setuidgid user for your host.
+
+exec 2>&1
+exec setuidgid bookmarker \
+  /usr/local/bin/bookmarker -config /usr/local/etc/bookmarker.yaml

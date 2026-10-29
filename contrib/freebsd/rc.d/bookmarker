@@ -1,0 +1,43 @@
+#!/bin/sh
+
+# PROVIDE: bookmarker
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+
+# Example FreeBSD rc.d script for Bookmarker.
+#
+# Install:
+#   cp contrib/freebsd/rc.d/bookmarker /usr/local/etc/rc.d/bookmarker
+#   chmod 755 /usr/local/etc/rc.d/bookmarker
+#   install binary to /usr/local/bin/bookmarker
+#   install config to /usr/local/etc/bookmarker.yaml  (absolute data: path)
+#   pw useradd bookmarker -s /usr/sbin/nologin -d /var/db/bookmarker -c "Bookmarker"
+#   mkdir -p /var/db/bookmarker && chown bookmarker:bookmarker /var/db/bookmarker
+#
+# /etc/rc.conf:
+#   bookmarker_enable="YES"
+#   # optional overrides:
+#   # bookmarker_user="bookmarker"
+#   # bookmarker_config="/usr/local/etc/bookmarker.yaml"
+#   # bookmarker_bin="/usr/local/bin/bookmarker"
+#
+# Then: service bookmarker start | stop | status | restart
+
+. /etc/rc.subr
+
+name="bookmarker"
+desc="Bookmarker Markdown bookmark server"
+rcvar="bookmarker_enable"
+
+load_rc_config "${name}"
+
+: "${bookmarker_enable:=NO}"
+: "${bookmarker_user:=bookmarker}"
+: "${bookmarker_config:=/usr/local/etc/bookmarker.yaml}"
+: "${bookmarker_bin:=/usr/local/bin/bookmarker}"
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-f -P ${pidfile} -u ${bookmarker_user} ${bookmarker_bin} -config ${bookmarker_config}"
+
+run_rc_command "$1"

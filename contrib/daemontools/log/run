@@ -1,0 +1,5 @@
+#!/bin/sh
+# Example daemontools multilog for Bookmarker.
+# Creates ./main under the log service directory (rotated by multilog).
+
+exec setuidgid bookmarker multilog t ./main

@@ -19,6 +19,18 @@ go run .
 
 `restart.cmd` kills whatever holds port 8787, rebuilds `bookmarker.exe`, and starts it minimized. When `web/` exists in the working directory the server serves those files from disk, so UI tweaks do not need a rebuild. Hard-refresh with Ctrl+F5 if the UI looks stale.
 
+## Running as a service
+
+Example supervisors live under [`contrib/`](contrib/):
+
+| | Path in tree |
+|--|----------------|
+| daemontools | [`contrib/daemontools/run`](contrib/daemontools/run) + [`log/run`](contrib/daemontools/log/run) |
+| FreeBSD rc.d | [`contrib/freebsd/rc.d/bookmarker`](contrib/freebsd/rc.d/bookmarker) → `/usr/local/etc/rc.d/bookmarker` |
+| Linux systemd | [`contrib/systemd/bookmarker.service`](contrib/systemd/bookmarker.service) (preferred on modern Linux) |
+
+Typical install: binary `/usr/local/bin/bookmarker`, user `bookmarker`, config `/usr/local/etc/bookmarker.yaml` (FreeBSD/daemontools) or `/etc/bookmarker/bookmarker.yaml` (systemd), data `/var/db/bookmarker` or `/var/lib/bookmarker` with an **absolute** `data:` in the yaml. Enable steps are in [`contrib/README.md`](contrib/README.md).
+
 ## Configuration
 
 Settings come from `bookmarker.yaml`. The server uses the first one it finds:

@@ -1,0 +1,24 @@
+[Unit]
+Description=Bookmarker Markdown bookmark server
+Documentation=file:///usr/local/share/doc/bookmarker/README.md
+After=network.target
+
+[Service]
+Type=simple
+User=bookmarker
+Group=bookmarker
+# WorkingDirectory is optional when bookmarker.yaml uses an absolute data: path.
+WorkingDirectory=/var/lib/bookmarker
+ExecStart=/usr/local/bin/bookmarker -config /etc/bookmarker/bookmarker.yaml
+Restart=on-failure
+RestartSec=5
+
+# Optional hardening — drop or loosen if you need wider filesystem access.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/bookmarker
+
+[Install]
+WantedBy=multi-user.target

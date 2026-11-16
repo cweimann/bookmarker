@@ -124,12 +124,23 @@
   }
 
   function applyDragState() {
-    document.querySelectorAll(".nav-item:not(.inbox)").forEach((el) => {
+    // Categories only — folders are drop targets, not drag sources.
+    document.querySelectorAll(".nav-item:not(.inbox):not(.folder)").forEach((el) => {
       el.draggable = editMode;
     });
     document.querySelectorAll(".bookmark").forEach((el) => {
       el.draggable = editMode;
     });
+  }
+
+  // Chromium often omits custom MIME types from dataTransfer.types during
+  // dragover; accept any in-app drag while Edit mode is on.
+  function allowEditDragOver(e, el) {
+    if (!editMode || !canEdit) return false;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (el) el.classList.add("drop-target");
+    return true;
   }
 
   function applyCanEditUI() {
@@ -266,22 +277,14 @@
 
   function wireFolderDrop(el, folderPath) {
     el.addEventListener("dragover", (e) => {
-      if (!editMode) return;
-      const types = e.dataTransfer.types;
-      if (
-        types.includes("text/category-slug") ||
-        types.includes("text/bookmark-id")
-      ) {
-        e.preventDefault();
-        el.classList.add("drop-target");
-      }
+      allowEditDragOver(e, el);
     });
     el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
     el.addEventListener("drop", async (e) => {
       e.preventDefault();
       e.stopPropagation();
       el.classList.remove("drop-target");
-      if (!editMode) return;
+      if (!editMode || !canEdit) return;
       const catSlug = e.dataTransfer.getData("text/category-slug");
       const fromPath = e.dataTransfer.getData("text/category-path");
       if (catSlug && fromPath !== undefined) {
@@ -330,18 +333,14 @@
 
   function wireCategoryDrop(el, folderPath, categorySlug) {
     el.addEventListener("dragover", (e) => {
-      if (!editMode) return;
-      if (e.dataTransfer.types.includes("text/bookmark-id")) {
-        e.preventDefault();
-        el.classList.add("drop-target");
-      }
+      allowEditDragOver(e, el);
     });
     el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
     el.addEventListener("drop", async (e) => {
       e.preventDefault();
       e.stopPropagation();
       el.classList.remove("drop-target");
-      if (!editMode) return;
+      if (!editMode || !canEdit) return;
       const id = e.dataTransfer.getData("text/bookmark-id");
       const fromPath = e.dataTransfer.getData("text/bookmark-path");
       const fromCategory = e.dataTransfer.getData("text/bookmark-category");
@@ -572,10 +571,12 @@
       );
       if (!c.inbox) {
         btn.addEventListener("dragstart", (e) => {
-          if (!editMode) {
+          if (!editMode || !canEdit) {
             e.preventDefault();
             return;
           }
+          // text/plain so Chromium exposes a type during dragover.
+          e.dataTransfer.setData("text/plain", "category:" + c.slug);
           e.dataTransfer.setData("text/category-slug", c.slug);
           e.dataTransfer.setData("text/category-path", path || "");
           e.dataTransfer.effectAllowed = "move";
@@ -716,6 +717,19 @@
       link.rel = "noopener noreferrer";
       link.textContent = b.title || b.url;
       link.draggable = false;
+      // Outside Edit mode, block native URL drags from the title. In Edit
+      // mode, if the browser still targets the link, attach the same payload.
+      link.addEventListener("dragstart", (e) => {
+        if (!editMode || !canEdit) {
+          e.preventDefault();
+          return;
+        }
+        e.dataTransfer.setData("text/plain", "bookmark:" + b.id);
+        e.dataTransfer.setData("text/bookmark-id", b.id);
+        e.dataTransfer.setData("text/bookmark-path", at.path);
+        e.dataTransfer.setData("text/bookmark-category", at.slug);
+        e.dataTransfer.effectAllowed = "move";
+      });
 
       const host = document.createElement("span");
       host.className = "host";
@@ -754,7 +768,7 @@
       li.appendChild(del);
 
       li.addEventListener("dragstart", (e) => {
-        if (!editMode) {
+        if (!editMode || !canEdit) {
           e.preventDefault();
           return;
         }
@@ -765,6 +779,7 @@
           e.preventDefault();
           return;
         }
+        e.dataTransfer.setData("text/plain", "bookmark:" + b.id);
         e.dataTransfer.setData("text/bookmark-id", b.id);
         e.dataTransfer.setData("text/bookmark-path", at.path);
         e.dataTransfer.setData("text/bookmark-category", at.slug);

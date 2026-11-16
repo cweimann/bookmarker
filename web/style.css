@@ -332,9 +332,13 @@ body.edit-mode .hint {
   padding: 0.45rem 0.7rem 0.45rem 0.55rem;
   border-bottom: 1px solid var(--line);
   border-left: 3px solid var(--http-border);
-  cursor: grab;
+  cursor: default;
   min-height: 2.1rem;
   background: transparent;
+}
+
+body.edit-mode .bookmark {
+  cursor: grab;
 }
 
 .bookmark.proto-http,
@@ -354,7 +358,7 @@ body.edit-mode .hint {
   background: #faf7f1;
 }
 
-.bookmark:active {
+body.edit-mode .bookmark:active {
   cursor: grabbing;
 }
 

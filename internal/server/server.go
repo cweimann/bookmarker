@@ -37,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/categories", s.handleCategories)
 	mux.HandleFunc("/api/categories/move", s.handleCategoryMove)
 	mux.HandleFunc("/api/categories/rename", s.handleCategoryRename)
+	mux.HandleFunc("/api/categories/delete", s.handleCategoryDelete)
 	mux.HandleFunc("/api/bookmarks", s.handleBookmarks)
 	mux.HandleFunc("/api/bookmarks/create", s.handleBookmarkCreate)
 	mux.HandleFunc("/api/bookmarks/update", s.handleBookmarkUpdate)
@@ -203,6 +204,17 @@ func (s *Server) handleCategoryRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w)(s.Store.RenameCategory(body.Path, body.Slug, body.Title))
+}
+
+func (s *Server) handleCategoryDelete(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+		Slug string `json:"slug"`
+	}
+	if !decodePost(w, r, &body) {
+		return
+	}
+	respondOK(w, s.Store.DeleteCategory(body.Path, body.Slug))
 }
 
 func (s *Server) handleBookmarks(w http.ResponseWriter, r *http.Request) {

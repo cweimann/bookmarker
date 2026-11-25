@@ -122,7 +122,7 @@ Deleting a folder promotes its contents one level up (same-named categories and 
 ## UI
 
 - Up to **3 columns**: root → selected folder → nested folder. Each column lists Inbox, categories, and child folders; Add creates a category or folder.
-- Main pane: one-line bookmarks (ssh stripe/glyph, Edit pencils/×). Sticky title / Add bookmark / Edit; side columns do not scroll with the list.
+- Main pane: one-line bookmarks (ssh stripe/glyph, Edit pencils/×). Categories get the same Edit-mode × (bookmarks merge into that folder’s Inbox; Inbox itself is undeletable). Sticky title / Add bookmark / Edit; side columns do not scroll with the list.
 - Drag bookmarks onto categories/folders (and categories onto folders) only while Edit mode is on.
 
 ## API (used by the UI)
@@ -140,6 +140,7 @@ POSTs take JSON bodies and must send `Content-Type: application/json`. Errors ar
 | POST | `/api/categories` | `{ path, title }` |
 | POST | `/api/categories/rename` | `{ path, slug, title }` |
 | POST | `/api/categories/move` | `{ slug, fromPath, toPath }` |
+| POST | `/api/categories/delete` | `{ path, slug }` (bookmarks → folder inbox; not Inbox) |
 | GET | `/api/bookmarks?path=&category=` | List bookmarks |
 | POST | `/api/bookmarks/create` | `{ path, category, title, url, source }` |
 | POST | `/api/bookmarks/update` | `{ id, path, category, title, url }` |

@@ -88,6 +88,40 @@ func (s *Store) DeleteFolder(folderPath string) error {
 	return os.RemoveAll(src)
 }
 
+// DeleteCategory removes a non-inbox category and merges its bookmarks into
+// that folder's inbox (root inbox.md when folderPath is empty). Inbox cannot
+// be deleted. Paths are validated the same way as other category APIs.
+func (s *Store) DeleteCategory(folderPath, slug string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	slug, err := parseCategory(slug)
+	if err != nil {
+		return err
+	}
+	if slug == "inbox" {
+		return errf(ErrInvalid, "cannot delete inbox")
+	}
+	folderPath, _, err = s.folder(folderPath)
+	if err != nil {
+		return err
+	}
+	src := s.listPath(folderPath, slug)
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return errf(ErrNotFound, "category not found: %s", joinPath(folderPath, slug))
+		}
+		return err
+	}
+	if err := s.ensureFolderPath(folderPath); err != nil {
+		return err
+	}
+	if err := s.mergeFileInto(src, s.listPath(folderPath, "inbox"), "Inbox"); err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
 // nonListFiles returns files under dir that are neither .md lists nor
 // leftover atomicWrite temp files.
 func nonListFiles(dir string) ([]string, error) {

@@ -38,6 +38,9 @@ func TestCategoryTraversalRejected(t *testing.T) {
 		if err := s.MoveCategory(cat, "", ""); !errors.Is(err, ErrInvalid) {
 			t.Errorf("MoveCategory(%q) = %v, want ErrInvalid", cat, err)
 		}
+		if err := s.DeleteCategory("", cat); !errors.Is(err, ErrInvalid) {
+			t.Errorf("DeleteCategory(%q) = %v, want ErrInvalid", cat, err)
+		}
 		if err := s.MoveBookmark("id", "", cat, "", "inbox"); !errors.Is(err, ErrInvalid) {
 			t.Errorf("MoveBookmark(%q) = %v, want ErrInvalid", cat, err)
 		}

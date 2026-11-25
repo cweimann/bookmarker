@@ -159,6 +159,91 @@ func TestDeleteFolderPromotesAndMerges(t *testing.T) {
 	}
 }
 
+func TestDeleteCategoryMergesIntoInbox(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed root inbox so merge keeps existing bookmarks.
+	if _, err := s.AddToRootInbox("Keep Me", "https://root.example/keep", "t"); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := s.CreateCategory("", "Scratch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeBookmarksFile(s.listPath("", cat.Slug), "Scratch", []Bookmark{
+		{ID: "scratch-1", Title: "Scratch Link", URL: "https://scratch.example", Source: "t", Saved: "2020-01-01T00:00:00Z"},
+		{ID: "dup-keep", Title: "Dup", URL: "https://root.example/keep", Source: "t", Saved: "2020-01-02T00:00:00Z"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	work, err := s.CreateFolder("", "Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wCat, err := s.CreateCategory(work.Path, "Servers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeBookmarksFile(s.listPath(work.Path, wCat.Slug), "Servers", []Bookmark{
+		{ID: "srv-1", Title: "VM", URL: "ssh://vm.example", Source: "t", Saved: "2020-01-03T00:00:00Z"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteCategory("", cat.Slug); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.listPath("", "scratch")); !os.IsNotExist(err) {
+		t.Fatalf("scratch.md still present: %v", err)
+	}
+	rootInbox, err := s.ListBookmarks("", "inbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := map[string]int{}
+	for _, b := range rootInbox {
+		urls[b.URL]++
+	}
+	if urls["https://root.example/keep"] != 1 {
+		t.Fatalf("root keep dedupe failed: %#v", urls)
+	}
+	if urls["https://scratch.example"] != 1 {
+		t.Fatalf("scratch not merged into root inbox: %#v", urls)
+	}
+
+	if err := s.DeleteCategory(work.Path, wCat.Slug); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.listPath(work.Path, "servers")); !os.IsNotExist(err) {
+		t.Fatalf("work/servers.md still present: %v", err)
+	}
+	workInbox, err := s.ListBookmarks(work.Path, "inbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, b := range workInbox {
+		if b.URL == "ssh://vm.example" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("servers bookmarks not in work inbox: %#v", workInbox)
+	}
+
+	if err := s.DeleteCategory("", "inbox"); err == nil {
+		t.Fatal("expected error deleting inbox")
+	}
+	if err := s.DeleteCategory("", "missing-cat"); err == nil {
+		t.Fatal("expected not found for missing category")
+	}
+}
+
 func TestDeleteFolderNestedParent(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)

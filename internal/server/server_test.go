@@ -234,11 +234,44 @@ func TestErrorStatusCodes(t *testing.T) {
 		{httptest.NewRequest(http.MethodGet, "/api/listing?path=a/b/c", nil), http.StatusNotFound},
 		{post("/api/folders", `{"parentPath":"","title":"Work"}`, "application/json"), http.StatusConflict},
 		{post("/api/folders", `not json`, "application/json"), http.StatusBadRequest},
+		{post("/api/categories/delete", `{"path":"","slug":"inbox"}`, "application/json"), http.StatusBadRequest},
+		{post("/api/categories/delete", `{"path":"","slug":"../notes"}`, "application/json"), http.StatusBadRequest},
+		{post("/api/categories/delete", `{"path":"","slug":"nope"}`, "application/json"), http.StatusNotFound},
 	}
 	for _, c := range cases {
 		if rr := do(h, c.req); rr.Code != c.want {
 			t.Errorf("%s %s: %d, want %d (%s)", c.req.Method, c.req.URL, rr.Code, c.want, rr.Body)
 		}
+	}
+}
+
+func TestCategoryDeleteMergesIntoInbox(t *testing.T) {
+	h, st := newTestServer(t)
+	cat, err := st.CreateCategory("", "TempCat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddBookmark("", cat.Slug, "Temp", "https://temp.example", "t"); err != nil {
+		t.Fatal(err)
+	}
+	r := post("/api/categories/delete", `{"path":"","slug":"tempcat"}`, "application/json")
+	r.Header.Set("Origin", "http://127.0.0.1:8787")
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	if rr := do(h, r); rr.Code != http.StatusOK {
+		t.Fatalf("delete category: %d %s", rr.Code, rr.Body)
+	}
+	list, err := st.ListBookmarks("", "inbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, b := range list {
+		if b.URL == "https://temp.example" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("bookmark not in inbox after category delete: %#v", list)
 	}
 }
 

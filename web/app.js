@@ -428,6 +428,36 @@
     }
   }
 
+  async function deleteCategory(path, slug, title) {
+    if (!slug || slug === "inbox") {
+      alert("Inbox cannot be deleted.");
+      return;
+    }
+    const label = title || slug;
+    if (
+      !confirm(
+        'Delete category "' +
+          label +
+          '"? Its bookmarks will move into this folder\'s Inbox.'
+      )
+    ) {
+      return;
+    }
+    try {
+      await api("/api/categories/delete", {
+        method: "POST",
+        body: JSON.stringify({ path: path || "", slug }),
+      });
+      if (view.path === (path || "") && view.slug === slug) {
+        view = { path: path || "", slug: "inbox", title: "Inbox" };
+      }
+      await refreshVisible();
+      await loadBookmarks();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   async function renameCategory(path, slug, currentTitle) {
     if (slug === "inbox") {
       alert("Inbox cannot be renamed.");
@@ -588,6 +618,11 @@
         row.appendChild(
           pencilBtn("Rename category", () =>
             renameCategory(path || "", c.slug, c.title)
+          )
+        );
+        row.appendChild(
+          deleteXBtn("Delete category", () =>
+            deleteCategory(path || "", c.slug, c.title)
           )
         );
       }
